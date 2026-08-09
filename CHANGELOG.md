@@ -18,12 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforcement, checked arithmetic, and 21 in-crate `Env`-based tests covering
   the cliff/duration boundaries, no-overpay claims, overflow reporting, and
   missing-schedule errors.
+- **Multi-sig wallet contract** (implemented): `initialize`, `submit`, `confirm`,
+  `execute`, `get_threshold`, and `get_tx` with owner/threshold configuration,
+  one-confirmation-per-owner enforcement, `require_auth` checks, and 18
+  in-crate `Env`-based tests.
+- **DAO governance contract** (implemented): `propose`, `vote`, `execute`, and
+  `get_proposal` with voting deadlines, one-vote-per-voter enforcement,
+  majority finalisation, and 16 in-crate `Env`-based tests.
+- **Subscription payments contract** (implemented): `subscribe`, `charge`,
+  `cancel`, and `get_subscription` with period-based billing that catches up
+  one period per call, and 12 in-crate `Env`-based tests.
+- **Marketplace royalties contract** (implemented): `set_royalty`, `distribute`,
+  and `get_royalty` with basis-point royalty splits capped at 100%, and 10
+  in-crate `Env`-based tests.
 
 ### In progress
-- The multi-sig-wallet, dao-governance, subscription-payments, and
-  marketplace-royalties contracts ship public interfaces and storage types
-  only; implementations are tracked in the
-  [issue backlog](https://github.com/Meet-hybrid/soroban-forge/issues).
+- Token settlement (SAC transfers) is out of scope for all contracts; each
+  tracks state, authorisation, and (where applicable) timing. Reserved states
+  (`Disputed`, `Revoked`, `Queued`, `PastDue`, `Rejected`, `Disabled`) and
+  features such as weighted voting, plan management, and multi-recipient
+  royalties land in follow-ups.
 
 ## [0.1.0] - 2026-08-04
 

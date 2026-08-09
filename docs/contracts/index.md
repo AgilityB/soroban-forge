@@ -2,12 +2,12 @@
 
 | Contract | Path | Status |
 |----------|------|--------|
-| Escrow | crates/escrow | Alpha (skeleton) |
-| Vesting | crates/vesting | Alpha (skeleton) |
-| Multi-Sig Wallet | crates/multi-sig-wallet | Alpha (skeleton) |
-| DAO Governance | crates/dao-governance | Alpha (skeleton) |
-| Subscription Payments | crates/subscription-payments | Alpha (skeleton) |
-| Marketplace Royalties | crates/marketplace-royalties | Alpha (skeleton) |
+| Escrow | crates/escrow | Implemented · 16 tests |
+| Vesting | crates/vesting | Implemented · 21 tests |
+| Multi-Sig Wallet | crates/multi-sig-wallet | Implemented · 18 tests |
+| DAO Governance | crates/dao-governance | Implemented · 16 tests |
+| Subscription Payments | crates/subscription-payments | Implemented · 12 tests |
+| Marketplace Royalties | crates/marketplace-royalties | Implemented · 10 tests |
 
 ## Adding a New Contract
 

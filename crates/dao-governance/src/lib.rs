@@ -2,24 +2,52 @@
 
 //! # Soroban Forge — DAO Governance contract
 //!
-//! A minimal on-chain governance primitive: members create proposals, vote
-//! with governance tokens, and approved proposals become executable. The
-//! public interface is declared by [`SorobanForgeDaoGovernance`]; [`DaoGovernance`]
-//! is the deployable contract. Implementation arrives in a later commit.
+//! A minimal on-chain governance primitive: members create proposals, cast one
+//! vote each (`for`/`against`, tallied in governance-token units), and a
+//! proposal is finalised once voting ends — passing when it has a strict
+//! majority of `for` votes.
+//!
+//! Lifecycle:
+//!
+//! ```text
+//! propose (voting_ends = now + duration)
+//!   --> Active --vote × n--> voting ends
+//!   --> execute: for > against ? Succeeded : Defeated
+//! ```
+//!
+//! Authorization model:
+//! - `propose` requires the proposer.
+//! - `vote` requires the voter and is one-vote-per-voter per proposal.
+//! - `execute` may be called by anyone, but only once voting has ended.
+//! - `get_proposal` is a read-only view.
+//!
+//! The `Queued` state is reserved for an optional timelock that lands in a
+//! follow-up; it is not reachable through the current public interface.
+//! Weighted voting by governance-token balance and action execution are
+//! intentionally out of scope for this iteration: the contract tracks
+//! proposals, votes, and timing, not balances.
 
+#[cfg(test)]
+extern crate std;
+
+use soroban_forge_shared_utils::ForgeError;
 use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Bytes, Env};
 
 /// Public interface for the Soroban Forge DAO governance contract.
 #[contractclient(name = "SorobanForgeDaoGovernanceClient")]
 pub trait SorobanForgeDaoGovernance {
     /// Create a new proposal with an encoded action payload.
+    ///
+    /// `duration` (seconds) defines how long voting stays open. Returns the
+    /// stable proposal id.
     fn propose(
         env: Env,
         proposer: Address,
         action: Bytes,
+        duration: u64,
     ) -> Result<u64, soroban_forge_shared_utils::ForgeError>;
 
-    /// Cast `voter`'s vote (for/against) on `proposal_id`.
+    /// Cast `voter`'s vote (for/against) on `proposal_id`. One vote per voter.
     fn vote(
         env: Env,
         proposal_id: u64,
@@ -29,6 +57,12 @@ pub trait SorobanForgeDaoGovernance {
 
     /// Finalise a proposal once voting has ended.
     fn execute(env: Env, proposal_id: u64) -> Result<(), soroban_forge_shared_utils::ForgeError>;
+
+    /// Read a stored proposal by id (read-only view).
+    fn get_proposal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<Proposal, soroban_forge_shared_utils::ForgeError>;
 }
 
 /// Lifecycle state of a governance proposal.
@@ -65,12 +99,330 @@ pub struct Proposal {
     pub state: ProposalState,
 }
 
+/// Instance-storage keys.
+#[contracttype]
+enum DataKey {
+    /// The proposal record for `u64` id.
+    Proposal(u64),
+    /// Marks that `voter` has already voted on `proposal_id`.
+    Vote(u64, Address),
+    /// Monotonic proposal id counter.
+    Count,
+}
+
 /// The deployable DAO governance contract.
-///
-/// The `#[contractimpl]` block is intentionally empty at this stage; the
-/// proposal/voting/execution logic is added in a subsequent commit.
 #[contract]
 pub struct DaoGovernance;
 
 #[contractimpl]
-impl DaoGovernance {}
+impl DaoGovernance {
+    /// Create a new proposal and return its stable id.
+    ///
+    /// Requires `duration > 0`. The proposer is authorized at creation time.
+    pub fn propose(
+        env: Env,
+        proposer: Address,
+        action: Bytes,
+        duration: u64,
+    ) -> Result<u64, ForgeError> {
+        if duration == 0 {
+            return Err(ForgeError::InvalidInput);
+        }
+        proposer.require_auth();
+
+        let proposal_id = Self::next_id(&env)?;
+        let voting_ends = env
+            .ledger()
+            .timestamp()
+            .checked_add(duration)
+            .ok_or(ForgeError::ArithmeticOverflow)?;
+        let proposal = Proposal {
+            proposal_id,
+            proposer,
+            action,
+            for_votes: 0,
+            against_votes: 0,
+            voting_ends,
+            state: ProposalState::Active,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+        Ok(proposal_id)
+    }
+
+    /// Cast a vote on an active proposal.
+    ///
+    /// Requires the voter. Each voter may vote exactly once; voting is closed
+    /// once the deadline (`voting_ends`) passes.
+    pub fn vote(
+        env: Env,
+        proposal_id: u64,
+        voter: Address,
+        support: bool,
+    ) -> Result<(), ForgeError> {
+        let mut proposal = Self::get_proposal_impl(&env, proposal_id)?;
+        if proposal.state != ProposalState::Active {
+            return Err(ForgeError::InvalidInput);
+        }
+        if env.ledger().timestamp() >= proposal.voting_ends {
+            return Err(ForgeError::DeadlineReached);
+        }
+        voter.require_auth();
+
+        let vote_key = DataKey::Vote(proposal_id, voter);
+        if env.storage().instance().has(&vote_key) {
+            return Err(ForgeError::InvalidInput);
+        }
+
+        if support {
+            proposal.for_votes = proposal
+                .for_votes
+                .checked_add(1)
+                .ok_or(ForgeError::ArithmeticOverflow)?;
+        } else {
+            proposal.against_votes = proposal
+                .against_votes
+                .checked_add(1)
+                .ok_or(ForgeError::ArithmeticOverflow)?;
+        }
+        env.storage().instance().set(&vote_key, &true);
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+        Ok(())
+    }
+
+    /// Finalise a proposal once voting has ended.
+    ///
+    /// Callable by anyone after the deadline. The proposal passes (`Succeeded`)
+    /// on a strict majority of `for` votes, otherwise it is `Defeated`.
+    pub fn execute(env: Env, proposal_id: u64) -> Result<(), ForgeError> {
+        let mut proposal = Self::get_proposal_impl(&env, proposal_id)?;
+        if proposal.state != ProposalState::Active {
+            return Err(ForgeError::InvalidInput);
+        }
+        if env.ledger().timestamp() < proposal.voting_ends {
+            return Err(ForgeError::InvalidInput);
+        }
+
+        proposal.state = if proposal.for_votes > proposal.against_votes {
+            ProposalState::Succeeded
+        } else {
+            ProposalState::Defeated
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(proposal_id), &proposal);
+        Ok(())
+    }
+
+    /// Read a stored proposal by id (read-only view).
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Result<Proposal, ForgeError> {
+        Self::get_proposal_impl(&env, proposal_id)
+    }
+
+    /// Allocate the next monotonic proposal id.
+    fn next_id(env: &Env) -> Result<u64, ForgeError> {
+        let count: u64 = env.storage().instance().get(&DataKey::Count).unwrap_or(0);
+        let id = count.checked_add(1).ok_or(ForgeError::ArithmeticOverflow)?;
+        env.storage().instance().set(&DataKey::Count, &id);
+        Ok(id)
+    }
+
+    fn get_proposal_impl(env: &Env, proposal_id: u64) -> Result<Proposal, ForgeError> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Proposal(proposal_id))
+            .ok_or(ForgeError::NotFound)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_forge_test_utils::TestAccounts;
+    use soroban_sdk::testutils::Ledger as _;
+    use soroban_sdk::{Bytes, Env};
+
+    const START: u64 = 1_000_000;
+    const DURATION: u64 = 86_400;
+
+    /// Build a fresh env with mocked auths, a registered contract, a pending
+    /// proposal, and named accounts.
+    macro_rules! setup {
+        () => {{
+            let env = Env::default();
+            env.mock_all_auths();
+            env.ledger().set_timestamp(START);
+            let contract_id = env.register_contract(None, DaoGovernance);
+            let client = SorobanForgeDaoGovernanceClient::new(&env, &contract_id);
+            let accounts = TestAccounts::generate(&env);
+            let proposal_id = client.propose(&accounts.user1, &payload(&env), &DURATION);
+            (env, client, accounts, proposal_id)
+        }};
+    }
+
+    fn payload(env: &Env) -> Bytes {
+        Bytes::from_array(env, &[0xC0, 0xDE, 0x00, 0xFF])
+    }
+
+    #[test]
+    fn propose_succeeds_and_is_active() {
+        let (_env, client, accounts, proposal_id) = setup!();
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.proposer, accounts.user1);
+        assert_eq!(proposal.state, ProposalState::Active);
+        assert_eq!(proposal.for_votes, 0);
+        assert_eq!(proposal.against_votes, 0);
+    }
+
+    #[test]
+    fn propose_assigns_distinct_ids() {
+        let (env, client, accounts, _id) = setup!();
+        let id2 = client.propose(&accounts.user2, &payload(&env), &DURATION);
+        let id3 = client.propose(&accounts.user3, &payload(&env), &DURATION);
+        assert_ne!(id2, id3);
+    }
+
+    #[test]
+    fn propose_rejects_zero_duration() {
+        let (env, client, accounts, _id) = setup!();
+        let err = client
+            .try_propose(&accounts.user1, &payload(&env), &0_u64)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+    }
+
+    #[test]
+    fn vote_records_support() {
+        let (_env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &true);
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.for_votes, 1);
+        assert_eq!(proposal.against_votes, 0);
+    }
+
+    #[test]
+    fn vote_records_against() {
+        let (_env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &false);
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.for_votes, 0);
+        assert_eq!(proposal.against_votes, 1);
+    }
+
+    #[test]
+    fn vote_twice_is_invalid() {
+        let (_env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &true);
+        let err = client
+            .try_vote(&proposal_id, &accounts.user2, &true)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+    }
+
+    #[test]
+    fn vote_after_deadline_is_rejected() {
+        let (env, client, accounts, proposal_id) = setup!();
+        env.ledger().set_timestamp(START + DURATION);
+        let err = client
+            .try_vote(&proposal_id, &accounts.user2, &true)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::DeadlineReached);
+    }
+
+    #[test]
+    fn vote_missing_proposal_is_not_found() {
+        let (_env, client, accounts, _id) = setup!();
+        let err = client
+            .try_vote(&999, &accounts.user2, &true)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::NotFound);
+    }
+
+    #[test]
+    fn execute_before_deadline_is_invalid() {
+        let (_env, client, _accounts, proposal_id) = setup!();
+        let err = client.try_execute(&proposal_id).unwrap_err().unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+    }
+
+    #[test]
+    fn execute_after_deadline_passes_majority() {
+        let (env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &true);
+        env.ledger().set_timestamp(START + DURATION + 1);
+        client.execute(&proposal_id);
+        assert_eq!(
+            client.get_proposal(&proposal_id).state,
+            ProposalState::Succeeded
+        );
+    }
+
+    #[test]
+    fn execute_after_deadline_defeats_minority() {
+        let (env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &false);
+        client.vote(&proposal_id, &accounts.user3, &true);
+        client.vote(&proposal_id, &accounts.validator, &false);
+        env.ledger().set_timestamp(START + DURATION + 1);
+        client.execute(&proposal_id);
+        assert_eq!(
+            client.get_proposal(&proposal_id).state,
+            ProposalState::Defeated
+        );
+    }
+
+    #[test]
+    fn execute_tie_is_defeated() {
+        let (env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &true);
+        client.vote(&proposal_id, &accounts.user3, &false);
+        env.ledger().set_timestamp(START + DURATION + 1);
+        client.execute(&proposal_id);
+        assert_eq!(
+            client.get_proposal(&proposal_id).state,
+            ProposalState::Defeated
+        );
+    }
+
+    #[test]
+    fn execute_no_votes_is_defeated() {
+        let (env, client, _accounts, proposal_id) = setup!();
+        env.ledger().set_timestamp(START + DURATION + 1);
+        client.execute(&proposal_id);
+        assert_eq!(
+            client.get_proposal(&proposal_id).state,
+            ProposalState::Defeated
+        );
+    }
+
+    #[test]
+    fn execute_twice_is_invalid() {
+        let (env, client, accounts, proposal_id) = setup!();
+        client.vote(&proposal_id, &accounts.user2, &true);
+        env.ledger().set_timestamp(START + DURATION + 1);
+        client.execute(&proposal_id);
+        let err = client.try_execute(&proposal_id).unwrap_err().unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+    }
+
+    #[test]
+    fn execute_missing_proposal_is_not_found() {
+        let (_env, client, _accounts, _id) = setup!();
+        let err = client.try_execute(&999).unwrap_err().unwrap();
+        assert_eq!(err, ForgeError::NotFound);
+    }
+
+    #[test]
+    fn get_proposal_missing_is_not_found() {
+        let (_env, client, _accounts, _id) = setup!();
+        let err = client.try_get_proposal(&999).unwrap_err().unwrap();
+        assert_eq!(err, ForgeError::NotFound);
+    }
+}

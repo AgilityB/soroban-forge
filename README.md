@@ -15,10 +15,8 @@ well-documented foundation, audit it for your use case, and ship.
 
 > **Status:** This project is under active development. The contracts are **not
 > independently audited** and should not be treated as production-ready without
-> your own security review. The escrow and vesting contracts are implemented
-> and tested; the remaining contracts currently ship their public interfaces
-> and storage types, with implementations delivered through the
-> [open issues](https://github.com/Meet-hybrid/soroban-forge/issues).
+> your own security review. All six contracts are implemented and tested; see
+> the per-contract docs for scope notes and reserved-but-unreachable states.
 
 ## Contracts
 
@@ -26,10 +24,10 @@ well-documented foundation, audit it for your use case, and ship.
 |----------|-------------|--------|
 | **Escrow** | Buyer–seller escrow with deadline-based refunds (`create → deposit → release / refund / cancel`, with `Disputed` reserved) | ✅ Implemented · 16 tests |
 | **Vesting** | Time-locked token release with cliff and linear release (`create_schedule → claim / claimable`) | ✅ Implemented · 21 tests |
-| **Multi-Sig Wallet** | Multi-owner wallet with configurable approval thresholds | 🚧 Interface + storage types |
-| **DAO Governance** | On-chain proposals, voting, deadline enforcement, and execution | 🚧 Interface + storage types |
-| **Subscription Payments** | Recurring payment plans with auto-renewal | 🚧 Interface + storage types |
-| **Marketplace Royalties** | NFT/asset sales with configurable royalty distribution | 🚧 Interface + storage types |
+| **Multi-Sig Wallet** | Multi-owner wallet with configurable approval thresholds (`initialize → submit → confirm → execute`) | ✅ Implemented · 18 tests |
+| **DAO Governance** | On-chain proposals, one-vote-per-voter voting, deadline enforcement, and finalisation | ✅ Implemented · 16 tests |
+| **Subscription Payments** | Recurring payment plans with periodic billing (`subscribe → charge / cancel`) | ✅ Implemented · 12 tests |
+| **Marketplace Royalties** | Asset sales with configurable basis-point royalty distribution | ✅ Implemented · 10 tests |
 
 Implementation work is tracked as scoped, labeled
 [issues](https://github.com/Meet-hybrid/soroban-forge/issues).

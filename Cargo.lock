@@ -1260,6 +1260,7 @@ name = "soroban-forge-dao-governance"
 version = "0.1.0"
 dependencies = [
  "soroban-forge-shared-utils",
+ "soroban-forge-test-utils",
  "soroban-sdk",
 ]
 
@@ -1277,6 +1278,7 @@ name = "soroban-forge-marketplace-royalties"
 version = "0.1.0"
 dependencies = [
  "soroban-forge-shared-utils",
+ "soroban-forge-test-utils",
  "soroban-sdk",
 ]
 
@@ -1285,6 +1287,7 @@ name = "soroban-forge-multi-sig-wallet"
 version = "0.1.0"
 dependencies = [
  "soroban-forge-shared-utils",
+ "soroban-forge-test-utils",
  "soroban-sdk",
 ]
 
@@ -1300,6 +1303,7 @@ name = "soroban-forge-subscription-payments"
 version = "0.1.0"
 dependencies = [
  "soroban-forge-shared-utils",
+ "soroban-forge-test-utils",
  "soroban-sdk",
 ]
 
