@@ -128,7 +128,7 @@ soroban-forge/
 │   ├── subscription-payments/
 │   └── marketplace-royalties/
 ├── packages/                 # Language bindings and example apps
-│   ├── typescript-sdk/       # TypeScript SDK for contract interaction
+│   ├── typescript-sdk/       # @soroban-forge/escrow-client (generated from the deployed escrow ABI)
 │   ├── nextjs-example/       # Next.js reference application
 │   └── deployment-templates/ # Docker and deployment templates
 ├── docs/                     # Architecture, tutorials, best practices
@@ -212,6 +212,8 @@ reproducible builds and a per-contract WASM size budget.
 - [Writing Your First Contract](docs/tutorials/writing-your-first-contract.md)
 - [Architecture](docs/architecture/index.md)
 - [Contract Overview](docs/contracts/index.md)
+- [Feature Status Matrix](docs/FEATURE-STATUS.md)
+- [Known Limitations](docs/KNOWN-LIMITATIONS.md)
 - [Storage Patterns](docs/architecture/storage-patterns.md)
 - [Smart Contract Security](docs/best-practices/smart-contract-security.md)
 - [Testing Strategy](docs/best-practices/testing-strategy.md)
