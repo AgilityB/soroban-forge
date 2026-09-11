@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Workspace migrated to soroban-sdk 27.0.6 on stable Rust** (was 21.5.1
+  pinned to Rust 1.96.0). Contracts build for `wasm32v1-none` (escrow
+  WASM: ~18 KB). Test registration uses `env.register(Contract, ())`.
+- **Escrow contract rebuilt as the flagship primitive** (v0.1.0's was a
+  state machine only):
+  - Real SEP-41 token settlement — `deposit` pulls from the buyer,
+    `release`/`refund`/`resolve` pay out — with **transfer-before-state
+    ordering** so a failed transfer leaves storage untouched.
+  - **Dispute flow implemented**: `dispute(escrow_id, claimant)` by the
+    buyer or seller, `resolve(escrow_id, in_favor_of_seller)` by the
+    arbiter, final. `Disputed` is now a live state, not reserved.
+  - **Release is seller-confirmed** (the paid party confirms delivery);
+    the v0.1.0 buyer-confirmed semantics are gone.
+  - **Lifecycle events**: `EscrowCreated`, `Deposited`, `Released`,
+    `Refunded`, `Disputed`, `Resolved`, `Cancelled` (escrow id as topic).
+  - **Per-record persistent storage** with TTL bumps on every write and a
+    permissionless `touch_ttl` keeper entrypoint; only the id counter
+    remains in instance storage.
+  - `create_escrow` now takes the `token` address; timeout refund
+    semantics unchanged.
+- Token failures are bucketed as `ForgeError::TokenTransferFailed`
+  (new shared error variant, code 11) rather than forwarding opaque
+  token discriminants.
+- Workspace version bumped to 0.2.0 (path-dependency versions updated).
+
+### Added
+- Escrow test suite grew from 16 to 27 tests, including a **conservation
+  property** asserting `deposited == paid out` on every terminal path ×
+  timeout combination, insufficient-balance failure ordering, dispute
+  freeze coverage, and TTL-keeper behavior. Workspace total: 104 tests.
+- `docs/FEATURE-STATUS.md` (per-entrypoint status matrix) and
+  `docs/RESUBMISSION.md` (phased plan); `docs/KNOWN-LIMITATIONS.md`
+  rewritten to the post-migration state.
+
 ### Removed
 - Internal maintainer-process docs (`docs/maintainers/`) and
   `.github/settings.yml` from the public tree; contributor-facing work remains
@@ -93,6 +128,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - `unsafe` code is forbidden workspace-wide.
 - `cargo audit` runs in CI. `RUSTSEC-2026-0009` (`time` 0.3.44) is a
-  transitive dependency of the pinned soroban-sdk 21.x chain, is not compiled
-  into the workspace graph, and is ignored in CI with rationale until the
-  soroban-sdk 27 migration (issue #14) removes it.
+  transitive dependency of the pinned soroban-sdk 21.x chain, is not
+  compiled into the workspace graph, and is ignored in CI with rationale
+  until the soroban-sdk 27 migration (issue #14) removes it.

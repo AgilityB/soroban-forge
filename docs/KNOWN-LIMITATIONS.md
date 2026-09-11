@@ -1,0 +1,107 @@
+# Known Limitations
+
+This document states, without marketing, what the Soroban Forge contracts
+**do not do** today. Everything here is a deliberate, tracked scoping
+decision — not an oversight.
+
+**Last verified against:** the SDK 27 migration (workspace v0.2.0).
+
+---
+
+## Resolved in the SDK 27 / Phase 1 migration
+
+These were the headline gaps in v0.1.0; all are closed **for the escrow
+contract** and remain open for the other five:
+
+1. **No token settlement** — escrow now performs real SEP-41 transfers
+   (`deposit` pulls from the buyer, `release`/`refund`/`resolve` pay out)
+   with transfer-before-state ordering so a failed transfer leaves no
+   partial state. The other five contracts still move nothing.
+2. **Instance-only storage** — escrow records now live in per-id
+   **persistent** entries with TTL bumps on every write and a
+   permissionless `touch_ttl` keeper entrypoint. The other five still use
+   instance storage exclusively.
+3. **No events** — escrow emits `EscrowCreated`, `Deposited`, `Released`,
+   `Refunded`, `Disputed`, `Resolved`, `Cancelled` (escrow id as topic).
+   The other five are still silent.
+4. **Arbiter stored but unreachable** — `dispute` (claimant-authorized)
+   and `resolve` (arbiter-only, final) make the third party live.
+   `Disputed` is a real state, verified by tests.
+5. **Toolchain pin** — the workspace now builds on **stable** Rust with
+   soroban-sdk **27.0.6** and the `wasm32v1-none` target. The old
+   Rust 1.96.0 / SDK 21.5.1 pin is gone.
+
+## Still open
+
+### 1. Token settlement for the other five contracts
+
+Vesting, multi-sig, DAO governance, subscriptions, and royalties remain
+state machines: amounts are validated and stored, never moved. Each gets
+its own tranche using the escrow pattern (see
+[RESUBMISSION.md](RESUBMISSION.md#phase-1--flagship-escrow-primitive-3-weeks)).
+
+### 2. Instance-only storage outside escrow
+
+The other five contracts keep all state in `env.storage().instance()`.
+Long-lived records there still face the byte budget and TTL-expiry
+bricking problem. Migrate per contract with the escrow pattern.
+
+### 3. No events outside escrow
+
+Only escrow is observable on-chain. The rest need event modules before
+any indexer or SDK integration.
+
+### 4. Negative authorization test coverage
+
+The suite runs under `mock_all_auths`, which proves the *call graph* of
+authorizations but not that a wrong signer is rejected. The one
+logic-level access control testable without auth mocking — the escrow
+`dispute` claimant check — is tested directly. Full `set_auths` negative
+fixtures for every entrypoint remain tracked in the security-invariant
+backlog.
+
+### 5. Vesting rounding residue
+
+Vesting claims use floor division; per-claim residue (at most one stroop
+× number of claims) stays in the contract until the final claim. No
+dust-sweep entrypoint. Revisit when vesting gets settlement.
+
+### 6. Testnet only — no mainnet deployment
+
+The escrow contract **is deployed on testnet** with a verified receipt
+round (see the README proof table and `scripts/demo-testnet.sh`). There
+is no mainnet deployment, and testnet receipts are not a substitute for
+an audit or a mainnet beta.
+
+### 7. `packages/` are stubs
+
+The TypeScript SDK remains a console-log placeholder and the Next.js
+example a static page (with a stale `teachlink` link). Phase 2 replaces
+the SDK with generated bindings for the escrow contract.
+
+### 8. Single maintainer
+
+All commits are by one person. Contributor-facing process exists — scoped
+issues with acceptance criteria, fork-first workflow — but no external
+contributions have landed yet.
+
+## Design notes (not limitations, but worth knowing)
+
+- **Either-party authorization** uses an explicit claimant parameter
+  (`dispute(escrow_id, claimant)`) because Soroban cannot express
+  "require_auth by A *or* B" in a single entrypoint. The claimant must be
+  a party to the escrow and must actually authorize; the check runs
+  before `require_auth` so outsider claims fail cheaply.
+- **Token errors are bucketed**, not forwarded: a token-contract failure
+  surfaces as `ForgeError::TokenTransferFailed` because a client cannot
+  tell which contract produced a forwarded discriminant. Root causes stay
+  visible in diagnostic events.
+- **Escrow release is seller-confirmed**: the paid party confirms
+  delivery. Buyer-confirmed release was the v0.1.0 behavior and is what
+  made the old contract a confirmation flow rather than escrow.
+
+## Out of scope for the flagship phase (deliberate)
+
+- Settlement work for the five non-flagship contracts (one tranche each)
+- Weighted voting, plan management, multi-recipient royalties
+- Formal verification, external audit (planned before any mainnet use)
