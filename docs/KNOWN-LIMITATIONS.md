@@ -73,11 +73,13 @@ round (see the README proof table and `scripts/demo-testnet.sh`). There
 is no mainnet deployment, and testnet receipts are not a substitute for
 an audit or a mainnet beta.
 
-### 7. `packages/` are stubs
+### 7. `packages/` are minimal
 
-The TypeScript SDK remains a console-log placeholder and the Next.js
-example a static page (with a stale `teachlink` link). Phase 2 replaces
-the SDK with generated bindings for the escrow contract.
+The TypeScript SDK is now a **generated client from the deployed escrow
+contract's ABI** (`@soroban-forge/escrow-client`, contract ID embedded) —
+replacing the v0.1.0 console-log placeholder. It has no dedicated test
+suite of its own yet, and the Next.js example remains a static landing
+page (stale `teachlink` links fixed; a real demo UI is future work).
 
 ### 8. Single maintainer
 

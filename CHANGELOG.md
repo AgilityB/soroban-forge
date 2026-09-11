@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace version bumped to 0.2.0 (path-dependency versions updated).
 
 ### Added
+- **Generated TypeScript client** for the deployed escrow contract
+  (`packages/typescript-sdk`, published as `@soroban-forge/escrow-client`):
+  produced by `stellar contract bindings typescript` from the testnet
+  contract's ABI, with the deployed contract ID embedded and every
+  method typed with doc comments from the Rust source. Replaces the
+  v0.1.0 console-log placeholder SDK.
+- `docs/GRANT-APPLICATION.md`: application narrative with the live
+  testnet proof links, the rejection-cause resolutions, and a
+  tranche-scoped ask.
 - Escrow test suite grew from 16 to 27 tests, including a **conservation
   property** asserting `deposited == paid out` on every terminal path ×
   timeout combination, insufficient-balance failure ordering, dispute
