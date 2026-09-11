@@ -22,7 +22,7 @@ repository    = "https://github.com/Meet-hybrid/soroban-forge"
 
 [workspace.dependencies]
 soroban-sdk       = "=27.0.6"
-rand              = { version = "0.8", default-features = false, features = ["small_rng"] }
+soroban-sdk-macros = "=27.0.6"
 clap              = { version = "4.5", features = ["derive"] }
 
 [workspace.lints.rust]

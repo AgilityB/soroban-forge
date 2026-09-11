@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Security audit is clean without ignores.** `time` was updated to
+  0.3.47 in the lockfile, clearing RUSTSEC-2026-0009 (an earlier note
+  claimed the SDK 27 migration removed it — it did not; the advisory
+  remained and CI correctly failed). The unused direct `rand` dependency
+  was dropped, and the weekly audit workflow's stale ignore was removed.
+  Remaining audit output is warnings only, both transitive and not
+  actionable from this workspace: `paste` (unmaintained, via
+  soroban-sdk) and `rand` 0.8 (unsound edge case, via
+  soroban-env-host's crypto stack); warnings do not fail the gate.
+
 ### Changed
 - **Workspace migrated to soroban-sdk 27.0.6 on stable Rust** (was 21.5.1
   pinned to Rust 1.96.0). Contracts build for `wasm32v1-none` (escrow
