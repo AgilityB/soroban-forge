@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Negative-authorization test suite** for escrow
+  (`crates/escrow/src/authz.rs`, 19 tests): per entrypoint, proves a wrong
+  signer is rejected by the host, that an armed signature cannot be
+  replayed over different arguments (create over a changed amount, deposit
+  pull over a changed amount), that a dispute claim requires the claimant's
+  own signature, and that a blank envelope aborts every state-changing
+  call without writing state. Includes `env.auths()` assertions pinning the
+  authorized-invocation tree of every payout path. Verified finding, now
+  documented: contract self-authorization is implicit in the Soroban host,
+  so the recorded tree for a payout is the party's entrypoint frame only —
+  and a seller signature alone legitimately completes a release.
+- **Reviewer walkthrough** (`docs/WALKTHROUGH.md`): step-by-step expected
+  output for verifying the repo end-to-end, including the testnet receipt
+  round.
+- **Provenance manifest gate** (`scripts/provenance.sh` + a CI job):
+  builds all six contract WASMs, records SHA-256 hashes per artifact at a
+  named git revision into `provenance-manifest.json`, verifies them from a
+  clean rebuild, and uploads the manifest as a CI artifact.
+
 ### Fixed
 - **Security audit is clean without ignores.** `time` was updated to
   0.3.47 in the lockfile, clearing RUSTSEC-2026-0009 (an earlier note
