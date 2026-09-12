@@ -24,7 +24,7 @@ labeled **state machine** where they track but do not settle.
 | `touch_ttl` | ✅ Implemented | Permissionless TTL keeper for the escrow's persistent entry |
 | Events | ✅ Implemented | `EscrowCreated`, `Deposited`, `Released`, `Refunded`, `Disputed`, `Resolved`, `Cancelled`; id as topic |
 | Storage | ✅ Persistent + TTL | Per-id persistent entries; instance storage only for the id counter |
-| Tests | ✅ 27 | Full lifecycle, dispute paths, failure ordering, **conservation property** (`deposited == paid out` on every terminal path × timeout) |
+| Tests | ✅ 30 | Full lifecycle, dispute paths, failure ordering, conservation property, **randomized property suite** (proptest): conservation over random paths, tamper-resilient pool conservation, fund safety over arbitrary call sequences |
 
 ## Vesting (`crates/vesting`)
 
