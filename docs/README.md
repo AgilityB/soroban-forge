@@ -23,8 +23,6 @@ Read these before relying on or contributing to the contracts:
   second rejection
 - [Resubmission Plan](RESUBMISSION.md) — the phased plan for the
   flagship escrow port (SDK 27, SEP-41 settlement, disputes, events)
-- [Funding Applications](FUNDING-APPLICATIONS.md) — paste-ready GrantFox
-  application text and the Drips claim checklist
 
 ## Quick Links
 
