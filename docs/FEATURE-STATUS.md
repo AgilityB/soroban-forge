@@ -24,7 +24,7 @@ labeled **state machine** where they track but do not settle.
 | `touch_ttl` | ✅ Implemented | Permissionless TTL keeper for the escrow's persistent entry |
 | Events | ✅ Implemented | `EscrowCreated`, `Deposited`, `Released`, `Refunded`, `Disputed`, `Resolved`, `Cancelled`; id as topic |
 | Storage | ✅ Persistent + TTL | Per-id persistent entries; instance storage only for the id counter |
-| Tests | ✅ 30 | Full lifecycle, dispute paths, failure ordering, conservation property, **randomized property suite** (proptest): conservation over random paths, tamper-resilient pool conservation, fund safety over arbitrary call sequences |
+| Tests | ✅ 49 | Full lifecycle, dispute paths, failure ordering, conservation property, **randomized property suite** (proptest): conservation over random paths, tamper-resilient pool conservation, fund safety over arbitrary call sequences; **negative-auth suite** (`authz.rs`): per-entrypoint wrong-signer rejection, signature/args replay rejection, `env.auths()` authorization-tree assertions |
 
 ## Vesting (`crates/vesting`)
 
@@ -83,12 +83,12 @@ labeled **state machine** where they track but do not settle.
 | Concern | Status | Notes |
 |---|---|---|
 | Checked arithmetic | ✅ Workspace-wide | Overflow-safe; vesting guards documented |
-| `require_auth` on every state change | ✅ Workspace-wide | Mocked in tests; see [Known Limitations §4](KNOWN-LIMITATIONS.md) for the negative-test gap |
+| `require_auth` on every state change | ✅ Workspace-wide | Escrow: proven against wrong signers via the negative-auth suite (`authz.rs`) + authorization-tree assertions; other five: call-graph level only (see [Known Limitations §4](KNOWN-LIMITATIONS.md)) |
 | Events | ⚠️ Escrow only | Full lifecycle events on escrow; none on the other five |
 | Persistent storage + TTL | ⚠️ Escrow only | Per-id persistent entries + `touch_ttl` keeper; others instance-only |
 | SEP-41 token settlement | ⚠️ Escrow only | Real transfers with transfer-before-state ordering; others store amounts only |
 | Testnet deployment | ✅ Escrow deployed | Contract ID, WASM sha256, and receipt rounds in the README "Proof at a glance" table; the other five are not deployed |
 | TypeScript SDK | ✅ Generated | `@soroban-forge/escrow-client` generated from the deployed escrow ABI (no own test suite yet) |
-| CI (fmt/clippy/test/audit/WASM size) | ✅ Enforced | `--locked`, `-D warnings`, stable toolchain, `wasm32v1-none`, size budget |
+| CI (fmt/clippy/test/audit/WASM size/provenance) | ✅ Enforced | `--locked`, `-D warnings`, stable toolchain, `wasm32v1-none`, size budget, **provenance manifest job** (SHA-256 of all six WASM artifacts from a clean rebuild) |
 | External audit | ❌ Not performed | Planned before any mainnet use |
 | Soroban SDK version | ✅ 27.0.6 | Stable Rust; `wasm32v1-none` target |
