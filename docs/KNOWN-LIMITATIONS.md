@@ -79,6 +79,14 @@ round (see the README proof table and `scripts/demo-testnet.sh`). There
 is no mainnet deployment, and testnet receipts are not a substitute for
 an audit or a mainnet beta.
 
+The mainnet path is prepared but **not executed**:
+`scripts/deploy-mainnet.sh` mirrors the testnet demo against Pubnet
+(same three rounds, zero-value smoke asset, explicit `--yes` cost gate,
+balance preflight, WASM-hash cross-check against the provenance
+manifest). It requires four pre-funded identities, which is the
+remaining human step. A mainnet receipt, once it exists, will be added
+to the README proof table with its own explorer links.
+
 ### 7. `packages/` are minimal
 
 The TypeScript SDK is now a **generated client from the deployed escrow
