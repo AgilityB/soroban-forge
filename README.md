@@ -13,7 +13,8 @@ royalties, plus a developer CLI and TypeScript bindings.
 ## Proof at a glance
 
 The escrow contract is **deployed and verified on Stellar testnet**. Every
-step below was executed live; run `bash scripts/demo-testnet.sh` to reproduce.
+step below was executed live; run `bash scripts/demo-testnet.sh` to reproduce
+([step-by-step walkthrough with expected output](docs/WALKTHROUGH.md)).
 
 | Artifact | Value |
 |---|---|
