@@ -707,4 +707,7 @@ mod events {
 mod tests;
 
 #[cfg(test)]
+mod authz;
+
+#[cfg(test)]
 mod props;
