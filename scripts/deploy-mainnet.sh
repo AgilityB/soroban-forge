@@ -97,11 +97,21 @@ check_balance() { # identity_alias floor_whole_xlm
     esac
   fi
   if [ -z "$BAL" ]; then
-    CLI_BAL=$(stellar keys balance "$name" --network "$NET" 2>/dev/null | tail -1 || true)
-    case "$CLI_BAL" in
-      ''|*[!0-9.]*) ;;
-      *) BAL=${CLI_BAL%%.*} ;;
-    esac
+    # CLI-version-independent fallback: query Horizon for the native balance.
+    # (`stellar keys balance` does not exist in all CLI versions.) Horizon's
+    # balance objects list "balance" before "asset_type", so track the most
+    # recent balance line and emit it when the native object's asset_type
+    # line appears — correct with or without trustlines.
+    local G NATIVE_BAL
+    if G=$(stellar keys address "$name" 2>/dev/null); then
+      NATIVE_BAL=$(curl -s --max-time 10 "https://horizon.stellar.org/accounts/$G" \
+        | awk '/"balance": /{bal=$0} /"asset_type": "native"/{print bal; exit}' \
+        | sed -n 's/.*"balance": "\([0-9.]*\)".*/\1/p')
+      case "$NATIVE_BAL" in
+        ''|*[!0-9.]*) ;;
+        *) BAL=${NATIVE_BAL%%.*} ;;
+      esac
+    fi
   fi
   if [ -n "$BAL" ]; then
     echo "  $name: $BAL XLM"
