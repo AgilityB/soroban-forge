@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   builds all six contract WASMs, records SHA-256 hashes per artifact at a
   named git revision into `provenance-manifest.json`, verifies them from a
   clean rebuild, and uploads the manifest as a CI artifact.
+- **Mainnet deploy + smoke script** (`scripts/deploy-mainnet.sh`): mirrors
+  the testnet demo against Pubnet — same three escrow rounds over a
+  zero-value smoke asset, with an explicit cost-confirmation gate,
+  best-effort XLM preflight (stroop-correct), idempotent trustlines,
+  WASM-hash cross-check against the provenance manifest, and explorer
+  receipts. Prepared, not yet executed: needs four pre-funded mainnet
+  identities (human step). Known limitation: the installed stellar CLI
+  version may disagree with the preflight invocations — the script then
+  warns and continues rather than failing mid-run.
 
 ### Fixed
 - **Security audit is clean without ignores.** `time` was updated to
