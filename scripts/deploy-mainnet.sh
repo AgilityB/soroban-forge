@@ -25,13 +25,16 @@
 #
 # Prerequisites:
 #   - stellar CLI on PATH (v23+; tested with v28.0.0)
-#   - four funded mainnet identities (aliases below); create + fund them
-#     manually the first time:
-#       sf-main-issuer   (token issuer / escrow deployer; needs ~1.5 XLM
-#                         base reserve headroom for the asset + contracts)
-#       sf-main-buyer    (holds the smoke asset; needs trustline + fees)
-#       sf-main-seller   (needs trustline + fees)
-#       sf-main-arbiter  (fees only)
+#   - three funded mainnet identities (aliases below); create + fund them
+#     manually the first time. Budget for a ~5 XLM total run:
+#       sf-main-issuer   2.5 XLM (token issuer; deploys SAC + escrow —
+#                         contract rent lands here — and doubles as the
+#                         arbiter: an arbiter is just an address that
+#                         authorizes `resolve`, and a fourth identity
+#                         would cost another 1 XLM reserve for nothing)
+#       sf-main-buyer    1.5 XLM (trustline reserve + deposit fees)
+#       sf-main-seller   1 XLM   (trustline reserve + release fees)
+#     If the escrow deploy fails on rent, top the issuer up by 1-2 XLM.
 #   - the escrow WASM (built automatically if missing)
 #
 # Environment overrides:
@@ -58,7 +61,7 @@ link() { echo "  receipt: $EXPLORER/tx/$1"; }
 # --- identities (must already exist and be funded) --------------------------
 step "Identities (must be pre-funded — no friendbot on mainnet)"
 MISSING=0
-for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller sf-main-arbiter; do
+for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller; do
   if ! A=$(addr "$name"); then
     echo "  MISSING: $name (create with: stellar keys generate $name)"
     MISSING=1
@@ -66,9 +69,14 @@ for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller sf-main-arbiter; do
   fi
   echo "  $name: $A"
 done
-[ "$MISSING" -eq 0 ] || { echo "create the identities above, fund each with >= 2 XLM, then re-run"; exit 1; }
+[ "$MISSING" -eq 0 ] || { echo "create the identities above, fund them (issuer 2.5 XLM, buyer 1.5 XLM, seller 1 XLM), then re-run"; exit 1; }
 ISSUER=$(addr "$ISSUER_ALIAS"); BUYER=$(addr sf-main-buyer)
-SELLER=$(addr sf-main-seller); ARBITER=$(addr sf-main-arbiter)
+SELLER=$(addr sf-main-seller)
+# Budget layout: the issuer doubles as the arbiter. An arbiter is just an
+# address that authorizes `resolve`; a fourth funded identity would cost
+# another 1 XLM base reserve for no additional property.
+ARBITER="$ISSUER"
+ARBITER_ALIAS="$ISSUER_ALIAS"
 
 # --- preflight: real XLM balances (best-effort, unit-correct) ---------------
 # The native-asset wrapper contract (`xlm_balance`) reports STROOPS; the
@@ -78,10 +86,9 @@ SELLER=$(addr sf-main-seller); ARBITER=$(addr sf-main-arbiter)
 # degrades to a per-operation fee failure, never to value loss, because
 # nothing of monetary value is ever custodied by this script.
 step "Preflight: XLM balances (best-effort)"
-MIN_XLM=2
 NATIVE="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXOF"
-for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller sf-main-arbiter; do
-  BAL=""
+check_balance() { # identity_alias floor_whole_xlm
+  local name="$1" floor="$2" BAL="" STROOPS CLI_BAL
   if STROOPS=$(stellar contract invoke --id "$NATIVE" --source-account "$name" \
     --network "$NET" -- xlm_balance 2>/dev/null | tail -1); then
     case "$STROOPS" in
@@ -98,19 +105,26 @@ for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller sf-main-arbiter; do
   fi
   if [ -n "$BAL" ]; then
     echo "  $name: $BAL XLM"
-    if [ "$BAL" -lt "$MIN_XLM" ]; then
-      echo "ERROR: $name has < $MIN_XLM XLM; every mainnet operation costs fees + reserves"
+    if [ "$BAL" -lt "$floor" ]; then
+      echo "ERROR: $name has < $floor XLM (fund to the budget in the header and re-run)"
       exit 1
     fi
   else
     echo "  $name: balance unavailable (CLI mismatch?) — continuing; fees are paid per operation"
   fi
-done
+}
+# 3-identity budget: issuer 2.5 XLM (carries contract rent), buyer 1.5 XLM
+# (trustline reserve), seller 1 XLM (trustline reserve). Floors are whole
+# XLM because balances are integerized above.
+check_balance "$ISSUER_ALIAS" 2
+check_balance sf-main-buyer 1
+check_balance sf-main-seller 1
 
 # --- confirmation gate ------------------------------------------------------
 step "Cost & scope confirmation"
 echo "  network:     Stellar MAINNET (Pubnet) — operations cost real XLM"
 echo "  asset:       'smoke' issued by this script's issuer (no monetary value)"
+echo "  identities:  3 (issuer doubles as arbiter) — issuer 2.5 / buyer 1.5 / seller 1 XLM"
 echo "  rounds:      3 escrow rounds x $AMOUNT smoke units (release + both dispute outcomes)"
 if [ "${1:-}" != "--yes" ]; then
   printf '  proceed? type "yes" to continue: '
@@ -186,7 +200,7 @@ round_dispute_seller_wins() {
   invoke "$ESCROW_ID" sf-main-buyer deposit --escrow_id "$id" >/dev/null
   invoke "$ESCROW_ID" sf-main-buyer dispute --escrow_id "$id" --claimant "$BUYER" >/dev/null
   echo "  disputed by buyer"
-  invoke "$ESCROW_ID" sf-main-arbiter resolve --escrow_id "$id" --in_favor_of_seller true >/dev/null
+  invoke "$ESCROW_ID" "$ARBITER_ALIAS" resolve --escrow_id "$id" --in_favor_of_seller true >/dev/null
   echo "  arbiter resolved for seller"
 }
 
@@ -199,7 +213,7 @@ round_dispute_buyer_wins() {
   invoke "$ESCROW_ID" sf-main-buyer deposit --escrow_id "$id" >/dev/null
   invoke "$ESCROW_ID" sf-main-seller dispute --escrow_id "$id" --claimant "$SELLER" >/dev/null
   echo "  disputed by seller"
-  invoke "$ESCROW_ID" sf-main-arbiter resolve --escrow_id "$id" --in_favor_of_seller false >/dev/null
+  invoke "$ESCROW_ID" "$ARBITER_ALIAS" resolve --escrow_id "$id" --in_favor_of_seller false >/dev/null
   echo "  arbiter resolved for buyer"
 }
 
