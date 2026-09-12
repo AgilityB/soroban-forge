@@ -26,14 +26,16 @@
 # Prerequisites:
 #   - stellar CLI on PATH (v23+; tested with v28.0.0)
 #   - three funded mainnet identities (aliases below); create + fund them
-#     manually the first time. Budget for a ~5 XLM total run:
+#     manually the first time. Real reserve math (base reserve 0.5 XLM,
+#     trustline +0.5, plus fee headroom — an account at exactly its
+#     minimum cannot pay a transaction fee):
 #       sf-main-issuer   2.5 XLM (token issuer; deploys SAC + escrow —
 #                         contract rent lands here — and doubles as the
 #                         arbiter: an arbiter is just an address that
 #                         authorizes `resolve`, and a fourth identity
 #                         would cost another 1 XLM reserve for nothing)
-#       sf-main-buyer    1.5 XLM (trustline reserve + deposit fees)
-#       sf-main-seller   1 XLM   (trustline reserve + release fees)
+#       sf-main-buyer    2.0 XLM (1.5 reserve-with-trustline + fees)
+#       sf-main-seller   2.0 XLM (1.5 reserve-with-trustline + fees)
 #     If the escrow deploy fails on rent, top the issuer up by 1-2 XLM.
 #   - the escrow WASM (built automatically if missing)
 #
@@ -41,6 +43,10 @@
 #   ESCROW_ID   reuse an existing mainnet escrow (script will not redeploy)
 #   TOKEN_ID    reuse an existing mainnet SAC (script will not re-issue)
 #   AMOUNT      escrow amount per round (default 100, smoke units)
+#   RPC_URL     Soroban RPC endpoint. Mainnet is bring-your-own in the
+#               stellar CLI (v28 ships no public mainnet RPC); the default
+#               below is Gateway.fm's public endpoint from the official
+#               provider list (developers.stellar.org → RPC providers).
 #
 # Usage:  bash scripts/deploy-mainnet.sh          # interactive confirmation
 #         bash scripts/deploy-mainnet.sh --yes    # skip confirmation
@@ -49,6 +55,8 @@ set -euo pipefail
 
 command -v stellar >/dev/null 2>&1 || { echo "stellar CLI not found on PATH"; exit 1; }
 NET="mainnet"
+RPC_URL="${RPC_URL:-https://soroban-rpc.mainnet.stellar.gateway.fm}"
+PASSPHRASE="Public Global Stellar Network ; September 2015"
 EXPLORER="https://stellar.exploreex.com"
 AMOUNT="${AMOUNT:-100}"
 ESCROW_ID="${ESCROW_ID:-}"
@@ -69,7 +77,7 @@ for name in "$ISSUER_ALIAS" sf-main-buyer sf-main-seller; do
   fi
   echo "  $name: $A"
 done
-[ "$MISSING" -eq 0 ] || { echo "create the identities above, fund them (issuer 2.5 XLM, buyer 1.5 XLM, seller 1 XLM), then re-run"; exit 1; }
+[ "$MISSING" -eq 0 ] || { echo "create the identities above, fund them (issuer 2.5 XLM, buyer 2.0 XLM, seller 2.0 XLM), then re-run"; exit 1; }
 ISSUER=$(addr "$ISSUER_ALIAS"); BUYER=$(addr sf-main-buyer)
 SELLER=$(addr sf-main-seller)
 # Budget layout: the issuer doubles as the arbiter. An arbiter is just an
@@ -90,7 +98,7 @@ NATIVE="CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXOF"
 check_balance() { # identity_alias floor_whole_xlm
   local name="$1" floor="$2" BAL="" STROOPS CLI_BAL
   if STROOPS=$(stellar contract invoke --id "$NATIVE" --source-account "$name" \
-    --network "$NET" -- xlm_balance 2>/dev/null | tail -1); then
+    --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" -- xlm_balance 2>/dev/null | tail -1); then
     case "$STROOPS" in
       ''|*[!0-9]*) ;;  # not a plain integer — fall through to CLI balance
       *) BAL=$(awk -v s="$STROOPS" 'BEGIN{printf "%d", s/10000000}') ;;
@@ -123,18 +131,19 @@ check_balance() { # identity_alias floor_whole_xlm
     echo "  $name: balance unavailable (CLI mismatch?) — continuing; fees are paid per operation"
   fi
 }
-# 3-identity budget: issuer 2.5 XLM (carries contract rent), buyer 1.5 XLM
-# (trustline reserve), seller 1 XLM (trustline reserve). Floors are whole
+# 3-identity budget: issuer 2.5 XLM (carries contract rent), buyer 2.0 XLM
+# and seller 2.0 XLM (1.5 reserve-with-trustline + fee headroom — an
+# account at exactly its minimum cannot pay a fee). Floors are whole
 # XLM because balances are integerized above.
 check_balance "$ISSUER_ALIAS" 2
-check_balance sf-main-buyer 1
-check_balance sf-main-seller 1
+check_balance sf-main-buyer 2
+check_balance sf-main-seller 2
 
 # --- confirmation gate ------------------------------------------------------
 step "Cost & scope confirmation"
 echo "  network:     Stellar MAINNET (Pubnet) — operations cost real XLM"
 echo "  asset:       'smoke' issued by this script's issuer (no monetary value)"
-echo "  identities:  3 (issuer doubles as arbiter) — issuer 2.5 / buyer 1.5 / seller 1 XLM"
+echo "  identities:  3 (issuer doubles as arbiter) — issuer 2.5 / buyer 2.0 / seller 2.0 XLM"
 echo "  rounds:      3 escrow rounds x $AMOUNT smoke units (release + both dispute outcomes)"
 if [ "${1:-}" != "--yes" ]; then
   printf '  proceed? type "yes" to continue: '
@@ -147,7 +156,7 @@ step "Smoke token (SAC for smoke:<issuer>)"
 if [ -z "$TOKEN_ID" ]; then
   TOKEN_ID=$(stellar contract asset deploy \
     --asset "smoke:$ISSUER" \
-    --source-account "$ISSUER_ALIAS" --network "$NET" 2>/dev/null | tail -1)
+    --source-account "$ISSUER_ALIAS" --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" 2>/dev/null | tail -1)
   [ -n "$TOKEN_ID" ] || { echo "token deploy failed"; exit 1; }
 fi
 echo "  token: $TOKEN_ID"
@@ -155,9 +164,9 @@ echo "  token: $TOKEN_ID"
 # Trustlines: receivers need one before holding the asset. Reuse silently
 # when the trustline already exists (idempotent across re-runs).
 step "Trustlines (buyer, seller)"
-stellar tx new change-trust --source-account sf-main-buyer --network "$NET" \
+stellar tx new change-trust --source-account sf-main-buyer --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" \
   --line "smoke:$ISSUER" --limit 1000000 >/dev/null 2>&1 || echo "  buyer trustline exists"
-stellar tx new change-trust --source-account sf-main-seller --network "$NET" \
+stellar tx new change-trust --source-account sf-main-seller --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" \
   --line "smoke:$ISSUER" --limit 1000000 >/dev/null 2>&1 || echo "  seller trustline exists"
 
 # --- escrow contract --------------------------------------------------------
@@ -174,7 +183,7 @@ if [ -z "$ESCROW_ID" ]; then
   echo "  wasm sha256: $WASM_SHA"
   echo "  (must match the provenance manifest — cross-check scripts/provenance.sh build)"
   ESCROW_ID=$(stellar contract deploy --wasm "$wasm" \
-    --source-account "$ISSUER_ALIAS" --network "$NET" 2>/dev/null | tail -1)
+    --source-account "$ISSUER_ALIAS" --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" 2>/dev/null | tail -1)
   [ -n "$ESCROW_ID" ] || { echo "escrow deploy failed"; exit 1; }
 fi
 echo "  escrow: $ESCROW_ID"
@@ -183,10 +192,10 @@ echo "  explorer: $EXPLORER/contract/$ESCROW_ID"
 # --- helpers ----------------------------------------------------------------
 invoke() { # id source fn args...  -> prints tx hash on success
   local id="$1" src="$2"; shift 2
-  stellar contract invoke --id "$id" --source-account "$src" --network "$NET" \
+  stellar contract invoke --id "$id" --source-account "$src" --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" \
     -- "$@" 2>/dev/null | tail -1
 }
-balance() { stellar token balance --id "$TOKEN_ID" --account "$1" --network "$NET" 2>/dev/null | tail -1; }
+balance() { stellar token balance --id "$TOKEN_ID" --account "$1" --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" 2>/dev/null | tail -1; }
 
 # --- three rounds -----------------------------------------------------------
 round_release() {
@@ -229,7 +238,7 @@ round_dispute_buyer_wins() {
 
 step "Minting $((AMOUNT * 3)) smoke units to buyer"
 stellar contract invoke --id "$TOKEN_ID" --source-account "$ISSUER_ALIAS" \
-  --network "$NET" -- mint --to "$BUYER" --amount $((AMOUNT * 3)) >/dev/null 2>&1 || true
+  --network "$NET" --network-passphrase "$PASSPHRASE" --rpc-url "$RPC_URL" -- mint --to "$BUYER" --amount $((AMOUNT * 3)) >/dev/null 2>&1 || true
 echo "  buyer balance: $(balance "$BUYER")"
 
 round_release
