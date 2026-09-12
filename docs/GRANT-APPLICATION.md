@@ -27,7 +27,8 @@ https://github.com/Meet-hybrid/soroban-forge#proof-at-a-glance
 | On-chain observability | 7 lifecycle events (`EscrowCreated`…`Cancelled`) with the escrow id as topic, publishing on testnet |
 | Failure-mode discipline | A missing seller trustline surfaced as the typed `TokenTransferFailed` with root cause in diagnostic events — the documented error-bucketing behavior, demonstrated live |
 | Reproducibility | `bash scripts/demo-testnet.sh` reruns the full round idempotently |
-| Engineering gates | 104/104 tests, clippy `-D warnings`, rustfmt, cargo audit, WASM size budget enforced in CI |
+| Randomized invariant testing | proptest suite over the escrow: funds conservation across random terminal paths, tamper-resilient pool conservation, fund safety over arbitrary call sequences |
+| Engineering gates | 107/107 tests, clippy `-D warnings`, rustfmt, cargo audit, WASM size budget enforced in CI |
 
 ## What changed since the last application
 
@@ -74,7 +75,8 @@ time.
 - **Success criteria:** any Stellar developer can run the demo script
   against the deployed contract and reproduce the receipt round
   end-to-end; the indexer serves "show me my escrows" from events alone;
-  coverage and CI gates stay green.
+  coverage and CI gates stay green. (Randomized invariant testing is
+  already done and in-repo, not part of this ask.)
 - **Deliverable timeline:** 4 weeks from award.
 - **Roadmap after:** tranche 2 — vesting settlement + TTL keeper; tranche
   3 — multi-sig execution dispatch. Each scoped identically: one

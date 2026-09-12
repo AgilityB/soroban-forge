@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace version bumped to 0.2.0 (path-dependency versions updated).
 
 ### Added
+- **Randomized property suite** for the escrow contract (`props.rs`,
+  proptest): P1 conservation over random terminal paths, P2 pool
+  conservation under storage-tampering adversaries (`env.as_contract`),
+  P3 fund safety over arbitrary call sequences checked against an
+  independent state-machine mirror, including outsider-dispute
+  rejection. Escrow tests 27 → 30; workspace 107. The suite's first run
+  caught a bug — in the test's own conservation formula, fixed, with the
+  minimal counterexample preserved in a comment.
+- `docs/REJECTION-PROOFING.md` (pre-submission checklist with owners)
+  and `docs/DESIGN-PARTNER-OUTREACH.md` (pilot outreach template).
 - **Generated TypeScript client** for the deployed escrow contract
   (`packages/typescript-sdk`, published as `@soroban-forge/escrow-client`):
   produced by `stellar contract bindings typescript` from the testnet

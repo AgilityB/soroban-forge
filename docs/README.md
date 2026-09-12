@@ -18,6 +18,9 @@ Read these before relying on or contributing to the contracts:
   honestly labeled (state-only entrypoints are marked as such)
 - [Known Limitations](KNOWN-LIMITATIONS.md) — what the contracts do
   **not** do today, with tracking references
+- [Rejection-Proofing](REJECTION-PROOFING.md) — the pre-submission
+  checklist: what is fixed, what blocks applying, what would cause a
+  second rejection
 - [Resubmission Plan](RESUBMISSION.md) — the phased plan for the
   flagship escrow port (SDK 27, SEP-41 settlement, disputes, events)
 
