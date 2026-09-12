@@ -51,14 +51,20 @@ bricking problem. Migrate per contract with the escrow pattern.
 Only escrow is observable on-chain. The rest need event modules before
 any indexer or SDK integration.
 
-### 4. Negative authorization test coverage
+### 4. Negative authorization coverage outside escrow
 
-The suite runs under `mock_all_auths`, which proves the *call graph* of
-authorizations but not that a wrong signer is rejected. The one
-logic-level access control testable without auth mocking — the escrow
-`dispute` claimant check — is tested directly. Full `set_auths` negative
-fixtures for every entrypoint remain tracked in the security-invariant
-backlog.
+**Closed for escrow** (was the open item here): a dedicated negative-auth
+suite (`crates/escrow/src/authz.rs`) proves per entrypoint that a wrong
+signer is rejected by the host, that armed signatures cannot be replayed
+over different arguments, and — via `env.auths()` tree assertions — pins
+the exact authorized-invocation tree every payout path demands. It also
+documents the verified mechanics: contract self-authorization is implicit
+(the host auto-approves `require_auth` from the executing contract), which
+is why a party signature alone legitimately completes a payout.
+
+Still open: the other five contracts' entrypoints are proven at call-graph
+level only. Lower priority because none of them move tokens yet — this
+closes alongside each contract's settlement tranche.
 
 ### 5. Vesting rounding residue
 
@@ -101,6 +107,13 @@ contributions have landed yet.
 - **Escrow release is seller-confirmed**: the paid party confirms
   delivery. Buyer-confirmed release was the v0.1.0 behavior and is what
   made the old contract a confirmation flow rather than escrow.
+- **Contract self-authorization is implicit**: the Soroban host
+  auto-approves `require_auth` when the demand comes from the currently
+  executing contract. That is what makes the custody pattern work —
+  outgoing payouts need no `__check_auth` — and it is why the recorded
+  authorized-invocation tree for a payout shows only the party's
+  entrypoint frame. Verified, not assumed: see the authz test module's
+  documentation.
 
 ## Out of scope for the flagship phase (deliberate)
 
