@@ -87,7 +87,7 @@ labeled **state machine** where they track but do not settle.
 | Events | ⚠️ Escrow only | Full lifecycle events on escrow; none on the other five |
 | Persistent storage + TTL | ⚠️ Escrow only | Per-id persistent entries + `touch_ttl` keeper; others instance-only |
 | SEP-41 token settlement | ⚠️ Escrow only | Real transfers with transfer-before-state ordering; others store amounts only |
-| Testnet deployment | ❌ Never deployed | Phase 2 of the [resubmission plan](RESUBMISSION.md) |
+| Testnet deployment | ✅ Escrow deployed | Contract ID, WASM sha256, and receipt rounds in the README "Proof at a glance" table; the other five are not deployed |
 | TypeScript SDK | ✅ Generated | `@soroban-forge/escrow-client` generated from the deployed escrow ABI (no own test suite yet) |
 | CI (fmt/clippy/test/audit/WASM size) | ✅ Enforced | `--locked`, `-D warnings`, stable toolchain, `wasm32v1-none`, size budget |
 | External audit | ❌ Not performed | Planned before any mainnet use |
