@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minimal counterexample preserved in a comment.
 - `docs/REJECTION-PROOFING.md` (pre-submission checklist with owners)
   and `docs/DESIGN-PARTNER-OUTREACH.md` (pilot outreach template).
+- `docs/FUNDING-APPLICATIONS.md` — paste-ready GrantFox application text
+  and the step-by-step Drips claim checklist (`FUNDING.json` flow).
 - **Generated TypeScript client** for the deployed escrow contract
   (`packages/typescript-sdk`, published as `@soroban-forge/escrow-client`):
   produced by `stellar contract bindings typescript` from the testnet
