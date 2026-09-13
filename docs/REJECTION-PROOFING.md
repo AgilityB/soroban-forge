@@ -58,7 +58,7 @@ this line.
 
 ### 3.3 Application packaging (human) ❌
 
-- [ ] Fill the GrantFox form from `docs/GRANT-APPLICATION.md`, linking
+- [ ] Fill the relevant funding application form from `docs/GRANT-APPLICATION.md`, linking
       the README proof table.
 - [ ] Tranche-scoped ask only (escrow hardening + indexer + shipped SDK
       client, 4 weeks). Do not ask for the other five contracts.

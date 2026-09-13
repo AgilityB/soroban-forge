@@ -8,7 +8,7 @@
 > `scripts/demo-testnet.sh`. Phase 3 (application narrative + design
 > partner) remains open.
 
-This is the working plan for reapplying to the GrantFox campaign after
+This is the working plan for resubmitting to an ecosystem funding campaign after
 the rejection of the v0.1.0 application, written **before** code changes
 so the ask and the deliverables are fixed first. It follows the
 resubmission pattern Sub Rosa published publicly: named deliverables per

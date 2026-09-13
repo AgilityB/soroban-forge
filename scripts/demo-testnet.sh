@@ -10,8 +10,8 @@
 # Prerequisites:
 #   - stellar CLI on PATH (v23+; tested with v28.0.0)
 #   - funded testnet identities (created automatically if missing):
-#       grantfox-phase2  (token issuer / faucet)
-#       grantfox-buyer, grantfox-seller, grantfox-arbiter
+#       soroban-forge-issuer  (token issuer / faucet)
+#       soroban-forge-buyer, soroban-forge-seller, soroban-forge-arbiter
 #   - the demo token (SAC for credit:<issuer>) and the escrow contract
 #     (deployed automatically on first run; the contract is NOT redeployed
 #     if the ESCROW_ID env var is set)
@@ -30,21 +30,21 @@ NET="testnet"
 AMOUNT="${AMOUNT:-500}"
 ESCROW_ID="${ESCROW_ID:-}"
 TOKEN_ID="${TOKEN_ID:-}"
-ISSUER_ALIAS="grantfox-phase2"
+ISSUER_ALIAS="soroban-forge-issuer"
 step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
 addr() { stellar keys address "$1" 2>/dev/null; }
 
 # --- identities ------------------------------------------------------------
 step "Identities"
-for name in "$ISSUER_ALIAS" grantfox-buyer grantfox-seller grantfox-arbiter; do
+for name in "$ISSUER_ALIAS" soroban-forge-buyer soroban-forge-seller soroban-forge-arbiter; do
   if ! addr "$name" >/dev/null 2>&1; then
     echo "creating + funding identity: $name"
     stellar keys generate "$name" --overwrite --fund --network "$NET" >/dev/null
   fi
   echo "  $name: $(addr "$name")"
 done
-ISSUER=$(addr "$ISSUER_ALIAS"); BUYER=$(addr grantfox-buyer)
-SELLER=$(addr grantfox-seller); ARBITER=$(addr grantfox-arbiter)
+ISSUER=$(addr "$ISSUER_ALIAS"); BUYER=$(addr soroban-forge-buyer)
+SELLER=$(addr soroban-forge-seller); ARBITER=$(addr soroban-forge-arbiter)
 
 # --- demo token (SAC) ------------------------------------------------------
 step "Demo token (SAC for credit:<issuer>)"
@@ -59,9 +59,9 @@ echo "  token: $TOKEN_ID"
 # Trustlines: on classic SACs, receivers need a trustline before they can
 # hold the asset (the buyer's failure here is exactly what Error #11 is for).
 step "Trustlines (buyer, seller)"
-stellar tx new change-trust --source-account grantfox-buyer  --network "$NET" \
+stellar tx new change-trust --source-account soroban-forge-buyer  --network "$NET" \
   --line "credit:$ISSUER" --limit 1000000 >/dev/null 2>&1 || echo "  buyer trustline exists"
-stellar tx new change-trust --source-account grantfox-seller --network "$NET" \
+stellar tx new change-trust --source-account soroban-forge-seller --network "$NET" \
   --line "credit:$ISSUER" --limit 1000000 >/dev/null 2>&1 || echo "  seller trustline exists"
 
 # --- escrow contract -------------------------------------------------------
@@ -86,39 +86,39 @@ balance() { stellar token balance --id "$TOKEN_ID" --account "$1" --network "$NE
 # --- three rounds -----------------------------------------------------------
 round_release() {
   step "Round: create -> deposit -> release"
-  local id; id=$(invoke "$ESCROW_ID" grantfox-buyer create_escrow \
+  local id; id=$(invoke "$ESCROW_ID" soroban-forge-buyer create_escrow \
     --buyer "$BUYER" --seller "$SELLER" --arbiter "$ARBITER" \
     --token "$TOKEN_ID" --amount "$AMOUNT" --timeout 86400)
   echo "  escrow #$id created"
-  invoke "$ESCROW_ID" grantfox-buyer deposit --escrow_id "$id" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-buyer deposit --escrow_id "$id" >/dev/null
   echo "  deposited $AMOUNT (buyer -> contract)"
-  invoke "$ESCROW_ID" grantfox-seller release --escrow_id "$id" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-seller release --escrow_id "$id" >/dev/null
   echo "  released (contract -> seller)"
 }
 
 round_dispute_seller_wins() {
   step "Round: create -> deposit -> dispute(buyer) -> resolve FOR SELLER"
-  local id; id=$(invoke "$ESCROW_ID" grantfox-buyer create_escrow \
+  local id; id=$(invoke "$ESCROW_ID" soroban-forge-buyer create_escrow \
     --buyer "$BUYER" --seller "$SELLER" --arbiter "$ARBITER" \
     --token "$TOKEN_ID" --amount "$AMOUNT" --timeout 86400)
   echo "  escrow #$id created"
-  invoke "$ESCROW_ID" grantfox-buyer deposit --escrow_id "$id" >/dev/null
-  invoke "$ESCROW_ID" grantfox-buyer dispute --escrow_id "$id" --claimant "$BUYER" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-buyer deposit --escrow_id "$id" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-buyer dispute --escrow_id "$id" --claimant "$BUYER" >/dev/null
   echo "  disputed by buyer"
-  invoke "$ESCROW_ID" grantfox-arbiter resolve --escrow_id "$id" --in_favor_of_seller true >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-arbiter resolve --escrow_id "$id" --in_favor_of_seller true >/dev/null
   echo "  arbiter resolved for seller"
 }
 
 round_dispute_buyer_wins() {
   step "Round: create -> deposit -> dispute(seller) -> resolve FOR BUYER"
-  local id; id=$(invoke "$ESCROW_ID" grantfox-buyer create_escrow \
+  local id; id=$(invoke "$ESCROW_ID" soroban-forge-buyer create_escrow \
     --buyer "$BUYER" --seller "$SELLER" --arbiter "$ARBITER" \
     --token "$TOKEN_ID" --amount "$AMOUNT" --timeout 86400)
   echo "  escrow #$id created"
-  invoke "$ESCROW_ID" grantfox-buyer deposit --escrow_id "$id" >/dev/null
-  invoke "$ESCROW_ID" grantfox-seller dispute --escrow_id "$id" --claimant "$SELLER" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-buyer deposit --escrow_id "$id" >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-seller dispute --escrow_id "$id" --claimant "$SELLER" >/dev/null
   echo "  disputed by seller"
-  invoke "$ESCROW_ID" grantfox-arbiter resolve --escrow_id "$id" --in_favor_of_seller false >/dev/null
+  invoke "$ESCROW_ID" soroban-forge-arbiter resolve --escrow_id "$id" --in_favor_of_seller false >/dev/null
   echo "  arbiter resolved for buyer"
 }
 
