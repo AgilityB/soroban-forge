@@ -88,7 +88,7 @@ labeled **state machine** where they track but do not settle.
 | Persistent storage + TTL | ⚠️ Escrow only | Per-id persistent entries + `touch_ttl` keeper; others instance-only |
 | SEP-41 token settlement | ⚠️ Escrow only | Real transfers with transfer-before-state ordering; others store amounts only |
 | Testnet deployment | ✅ Escrow deployed | Contract ID, WASM sha256, and receipt rounds in the README "Proof at a glance" table; the other five are not deployed |
-| Mainnet deployment | ⚠️ Prepared, not executed | `scripts/deploy-mainnet.sh` mirrors the testnet demo against Pubnet (zero-value smoke asset, cost gate, balance preflight, provenance cross-check); needs four pre-funded identities — see [Known Limitations §6](KNOWN-LIMITATIONS.md) |
+| Mainnet deployment | ⚠️ Partial | Smoke SAC live (`CBBCLWWU…DN4CW`, Horizon-confirmed); escrow WASM upload measured at **17.57 XLM rent** via simulation and deferred pending funding — see [Known Limitations §6](KNOWN-LIMITATIONS.md) |
 | TypeScript SDK | ✅ Generated | `@soroban-forge/escrow-client` generated from the deployed escrow ABI (no own test suite yet) |
 | CI (fmt/clippy/test/audit/WASM size/provenance) | ✅ Enforced | `--locked`, `-D warnings`, stable toolchain, `wasm32v1-none`, size budget, **provenance manifest job** (SHA-256 of all six WASM artifacts from a clean rebuild) |
 | External audit | ❌ Not performed | Planned as a grant-funded tranche deliverable before any mainnet value custody |
