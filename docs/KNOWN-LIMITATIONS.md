@@ -79,13 +79,22 @@ round (see the README proof table and `scripts/demo-testnet.sh`). There
 is no mainnet deployment, and testnet receipts are not a substitute for
 an audit or a mainnet beta.
 
-The mainnet path is prepared but **not executed**:
+The mainnet path is prepared and **partially executed**:
 `scripts/deploy-mainnet.sh` mirrors the testnet demo against Pubnet
 (same three rounds, zero-value smoke asset, explicit `--yes` cost gate,
 balance preflight, WASM-hash cross-check against the provenance
-manifest). It requires four pre-funded identities, which is the
-remaining human step. A mainnet receipt, once it exists, will be added
-to the README proof table with its own explorer links.
+manifest).
+
+Executed so far: the smoke SAC (`smoke:<issuer>`,
+`CBBCLWWUZSO25MYJEU2JBGCJK2F2GQ3WQVM2WMHTSGRP3GVKRGIDN4CW`) is live on
+mainnet, deployed through the script's flow with Horizon confirmation.
+Not executed: the escrow contract itself. The WASM upload simulates at
+**17.57 XLM resource/rent cost** (deterministic — measured via RPC
+simulation, `min_resource_fee` 175,684,169 stroops, plus inclusion
+fee), and the run was deferred pending funding rather than attempted
+with insufficient balance. A mainnet escrow receipt, once it exists,
+will be added to the README proof table with its own explorer links.
+Total one-time cost to finish: ~18–19 XLM on the issuer account.
 
 ### 7. `packages/` are minimal
 
