@@ -2,6 +2,9 @@
 
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache-2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/Meet-hybrid/soroban-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/Meet-hybrid/soroban-forge/actions)
+[![Test](https://github.com/Meet-hybrid/soroban-forge/actions/workflows/ci.yml/badge.svg?job=test)](https://github.com/Meet-hybrid/soroban-forge/actions)
+[![Clippy](https://github.com/Meet-hybrid/soroban-forge/actions/workflows/ci.yml/badge.svg?job=clippy)](https://github.com/Meet-hybrid/soroban-forge/actions)
+[![Audit](https://github.com/Meet-hybrid/soroban-forge/actions/workflows/ci.yml/badge.svg?job=audit)](https://github.com/Meet-hybrid/soroban-forge/actions)
 [![Rust](https://img.shields.io/badge/Rust-1.96.0-orange)](https://www.rust-lang.org)
 [![WASM](https://img.shields.io/badge/WASM-32--bit-654FF0)](https://github.com/Meet-hybrid/soroban-forge/blob/main/.github/workflows/ci.yml)
 
