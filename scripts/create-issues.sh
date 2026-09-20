@@ -8,7 +8,10 @@
 #
 # Safety:
 #   - Dry run by default; nothing is created without --apply.
-#   - Never applies the `Stellar Wave` label (added only after program acceptance).
+#   - Applies the `Stellar Wave` + `external-contributors` labels to the new
+#     Wave issues (i14-i18): the repo was accepted into the Stellar Wave
+#     Program on 2026-09-18, so the earlier no-Wave-label rule no longer
+#     applies to newly created issues.
 #   - Skips any title that already exists on the repository.
 set -euo pipefail
 
@@ -530,6 +533,447 @@ create_issue \
   "docs: document deployment and storage compatibility" \
   "documentation,complexity: trivial,good first issue" \
   "$BODY_DIR/i10.md"
+
+# NOTE: a previous draft here proposed "feat(vesting): add SEP-41 settlement,
+# persistent storage, and events". That scope is already covered by the open
+# GitHub issues #50 (vesting SEP-41 settlement) and #55 (vesting persistent
+# storage + TTL), so it was removed to avoid a duplicate. Replaced with the
+# DAO execution tranche, which no open issue covers.
+
+# ----------------------------------------------------------------- Issue 12
+cat > "$BODY_DIR/i12.md" <<'EOF'
+### Description
+
+`propose` and `vote` work, but `execute` only finalises state — the stored
+action payload is never dispatched (deferred in #18: "execution just
+finalizes state"). Governance that records a decision but cannot enact it is
+incomplete. Make `execute` perform a real cross-contract call to a target
+address with the approved payload, and guarantee a reverting target never
+marks the proposal executed. This is high-complexity: it introduces
+cross-contract invocation, extends the proposal lifecycle, and needs real
+failure-ordering tests.
+
+### Scope
+
+- `propose` accepts a target contract address plus the action `Bytes` payload.
+- Once a proposal is `Succeeded` and past its deadline, `execute` performs a
+  real cross-contract invocation; **execution is permissionless** (the
+  outcome was already decided by voters).
+- Extend the lifecycle with a terminal `Executed` state reached only from
+  `Succeeded`; `Active → Succeeded | Defeated` is unchanged.
+- Failure ordering: a target revert surfaces as a documented `ForgeError` and
+  leaves the proposal `Succeeded` (not `Executed`).
+- Emit `ProposalCreated`, `VoteCast`, and `Executed` events.
+- Update `docs/FEATURE-STATUS.md` and the DAO docs.
+
+### Non-goals
+
+- Weighted voting, quorum redesign, or delegation.
+- Timelock / execution queue.
+- Persistent storage + TTL migration (separate task).
+- Typed action enums — the payload stays opaque `Bytes`.
+
+### What "done" looks like
+
+- `execute` performs a real invocation for a `Succeeded`, past-deadline
+  proposal; a second call is rejected (`Executed` is terminal).
+- `Defeated` or still-`Active` proposals cannot be executed.
+- A target revert returns a documented error and leaves the proposal not
+  `Executed`; a test asserts the target state is unchanged.
+- An integration test dispatches to a registered mock target and asserts its
+  state changed exactly once.
+- Events are emitted; docs match behavior; `make lint` and the DAO test
+  target pass; the WASM size budget is respected.
+
+### Implementation guidelines
+
+- Read `crates/dao-governance/src/lib.rs` (state machine) and
+  `crates/escrow/src/lib.rs` (real inter-contract pattern).
+- Prefer `env.try_invoke_contract` so a target revert is a testable `Result`,
+  not an unwinding host panic.
+- Verify, don't assume, whether the DAO—as caller—satisfies a target's own
+  `require_auth`; document the verified behaviour as `crates/escrow/src/authz.rs`
+  does. Commit `Executed` only after a successful invocation.
+- Keep the public entrypoint names.
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- Explain the lifecycle/interface change and the failure-ordering test.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-dao-governance --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(dao-governance): execute passed proposals on-chain" \
+  "enhancement,complexity: high" \
+  "$BODY_DIR/i12.md"
+
+# NOTE: a previous draft here (i13, "feat(multi-sig-wallet): execute real
+# cross-contract payloads") is already covered by open issue #57
+# ("feat(multi-sig-wallet): dispatch approved payloads to a target contract").
+# It was removed to keep the Wave backlog free of near-duplicates.
+
+# --------------------------------------------------------------- Issue 14
+# Medium: single well-scoped feature on one crate (subscription-payments).
+# Targets a gap the code itself documents: PastDue is reserved but unreachable.
+cat > "$BODY_DIR/i14.md" <<'EOF'
+### Description
+
+The subscription-payments contract (`subscribe`, `charge`, `cancel`,
+`get_subscription`) implements pull-based recurring billing, but it has no
+arrears handling: the `PastDue` status exists in `SubscriptionStatus` yet is
+explicitly "reserved for a failed-payment retry model that lands in a
+follow-up" (see the crate docs) and is unreachable today. In practice a
+provider simply cannot pull when a subscriber defaults, and the subscription
+stays `Active` forever. This issue adds the retry model that makes `PastDue`
+real.
+
+### What "done" looks like
+
+- `charge` on a subscription whose subscriber cannot pay (no balance / no
+  trustline, surfaced as `ForgeError::TokenTransferFailed` once real SAC
+  settlement is wired) transitions the subscription to `PastDue` and records
+  the failed billing point without advancing `last_charged` past a period that
+  was not successfully paid.
+- A `retry` (or `charge` re-invocation) path that lets a `PastDue`
+  subscription return to `Active` on a successful payment, with at most one
+  period billed per successful call (catch-up semantics unchanged).
+- A bounded retry window: after `max_retries` consecutive failed attempts, the
+  subscription transitions to `Cancelled` (or an explicitly documented terminal
+  state) — no subscription can sit in `PastDue` forever.
+- `PastDue` subscriptions reject `charge` unless it is a documented retry;
+  `cancel` still works from `PastDue`.
+- Unit tests cover: first failure → `PastDue`; successful retry → `Active`;
+  retry exceeding the bound → terminal state; `cancel` from `PastDue`;
+  idempotent retry rejection for non-`PastDue` states.
+- `cargo test -p soroban-forge-subscription-payments --all-targets --locked`
+  and `make lint` pass; WASM size budget respected.
+
+### Implementation guidelines
+
+- Read `crates/subscription-payments/src/lib.rs` end to end first — the module
+  docs describe the intended lifecycle and the reserved `PastDue` status.
+- Real balance settlement against a SEP-41 token is **out of scope** (it is a
+  separate, larger task). Simulate the failure with a registered mock token
+  contract in `crates/test-utils`, or model the failure as an explicit
+  `mark_failed` provider entrypoint — pick one, document the choice.
+- Do **not** change the existing public entrypoint signatures
+  (`subscribe`/`charge`/`cancel`/`get_subscription`); additive changes only.
+- Reuse `crates/test-utils` and the house test style (`setup!` macro,
+  `try_<method>` client variants, `.unwrap_err().unwrap()`).
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- State explicitly whether failures are modeled via mock token or a new
+  entrypoint, and why.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-subscription-payments --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(subscription-payments): implement PastDue retry and arrears model" \
+  "enhancement,complexity: medium,Stellar Wave,external-contributors" \
+  "$BODY_DIR/i14.md"
+
+# --------------------------------------------------------------- Issue 15
+# High: royalty split precision and multi-recipient accounting.
+cat > "$BODY_DIR/i15.md" <<'EOF'
+### Description
+
+The marketplace-royalties contract supports exactly **one recipient per
+collection** with a single `bps` rate (see `crates/marketplace-royalties/src/
+lib.rs` module docs: "Multiple recipients per collection, per-token royalties,
+and actual token settlement are intentionally out of scope"). Real marketplaces
+need splits like 60/30/10 across creator/collaborator/platform. This issue
+implements multi-recipient splits with the rounding, dust, and invariant
+properties that make them safe on-chain.
+
+### What "done" looks like
+
+- `set_royalty` (or an additive `set_royalty_splits`) accepts up to a small,
+  documented maximum of recipients per collection (e.g. 5), each with its own
+  bps, and **rejects a total exceeding 10_000 bps**.
+- `distribute` computes every recipient's share as `amount * bps / 10_000`
+  with floor division and returns the exact net owed to the seller; the sum of
+  all shares plus the net always equals `amount` (dust goes to the seller, and
+  a test pins that property).
+- The never-negative and never-overpay guarantees from the single-recipient
+  version are preserved and re-asserted by tests (including `bps == 10_000`
+  and amount values near `i128::MAX`).
+- `Disabled` configurations settle in full to the seller, unchanged.
+- Backward compatibility: existing single-recipient configs keep working
+  (either migrated internally to a one-element split or served by the
+  unchanged `set_royalty` path); `get_royalty` behavior for existing configs
+  is documented either way.
+- Unit tests cover: multi-recipient split sums exactly; over-10_000 total
+  rejected; max-recipient bound enforced; zero-bps recipients allowed;
+  re-registration replaces all splits atomically (no partial state on error);
+  `distribute` on an unregistered collection is still `NotFound`.
+- `cargo test -p soroban-forge-marketplace-royalties --all-targets --locked`
+  and `make lint` pass; WASM size budget respected.
+
+### Implementation guidelines
+
+- Read `crates/marketplace-royalties/src/lib.rs` first; the single-recipient
+  implementation and its rounding comments are the baseline.
+- Storage: a `Vec<Split>` per collection in instance storage is acceptable at
+  this scale; document the schema in the crate docs, including what a
+  storage-breaking upgrade would look like.
+- Keep `set_royalty`'s existing signature and semantics; add rather than
+  mutate where possible, and update all callers/tests.
+- Reuse `crates/test-utils` and the house test style (`setup!` macro,
+  `try_<method>` client variants, `.unwrap_err().unwrap()`).
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- Include a worked example (e.g. 3 recipients over a 1_000-unit sale) showing
+  each share and the dust destination.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-marketplace-royalties --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(marketplace-royalties): multi-recipient splits with exact accounting" \
+  "enhancement,complexity: high,Stellar Wave,external-contributors" \
+  "$BODY_DIR/i15.md"
+
+# --------------------------------------------------------------- Issue 16
+# High: reachability for the vesting contract's reserved Revoked status.
+cat > "$BODY_DIR/i16.md" <<'EOF'
+### Description
+
+The vesting contract (`create_schedule`, `claim`, `claimable`, `get_status`)
+carries a `Revoked` status that is explicitly "reserved for a revocation
+method that lands in a follow-up; it is not reachable through the current
+public interface" (see `crates/vesting/src/lib.rs`). A vesting feature that
+can never be revoked cannot model real grant programs: when a grant is
+terminated, unvested tokens must stop accruing. This issue implements the
+revocation path that makes `Revoked` real.
+
+### What "done" looks like
+
+- A `revoke(schedule_id)` entrypoint that transitions a schedule
+  `Locked | Vesting → Revoked` and permanently stops further vesting.
+- The revoking party is explicit: extend `create_schedule` with a funder (or
+  `admin`) argument recorded on the schedule — revocation belongs to the
+  party that funds the grant, not the beneficiary. Changing
+  `create_schedule`'s signature is in scope; update all callers and tests
+  and call it out in the PR.
+- The pre-revocation vested amount is frozen at the revocation ledger
+  timestamp: `claim` after revocation succeeds only up to that amount, and
+  `claimable` returns `0` for a `Revoked` schedule once it is claimed.
+- Revoking an already-`Completed` or already-`Revoked` schedule is rejected
+  with a documented error; double-revoke is impossible.
+- Unit tests cover: revoke while `Locked`; revoke mid-vesting (partial claim
+  still possible up to the frozen amount); revoke after completion is
+  rejected; double revoke rejected; non-admin revoke rejected; `claimable`
+  before and after revocation.
+- `cargo test -p soroban-forge-vesting --all-targets --locked` and
+  `make lint` pass; the WASM size budget is respected.
+
+### Implementation guidelines
+
+- Read `crates/vesting/src/lib.rs` end to end first: the vesting math
+  (floor division in the vested computation), the `DataKey::Schedule(u64)`
+  storage, and the module docs noting the status is unreachable.
+- Adding a field to the stored schedule is a storage-breaking upgrade —
+  document it in the crate docs following the upgrade-compatibility pattern
+  used in `docs/contracts/`.
+- Coordination: open issues cover SEP-41 claim settlement (#50) and the
+  persistent-storage/TTL migration (#55). Keep this change compatible with
+  both — revocation is state-machine logic and must not depend on transfer
+  mechanics or storage layout choices.
+- Keep `claim`/`claimable`/`get_status` signatures unchanged.
+- Reuse `crates/test-utils` and the house test style (`setup!` macro,
+  `try_<method>` client variants, `.unwrap_err().unwrap()`).
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- State the `create_schedule` signature change and the storage compatibility
+  note explicitly.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-vesting --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(vesting): make the reserved Revoked status reachable" \
+  "enhancement,complexity: high,Stellar Wave,external-contributors" \
+  "$BODY_DIR/i16.md"
+
+# --------------------------------------------------------------- Issue 17
+# High: per-token royalty overrides on top of the collection-level config.
+cat > "$BODY_DIR/i17.md" <<'EOF'
+### Description
+
+The marketplace-royalties contract stores one royalty configuration per
+collection, and the crate docs explicitly list "per-token royalties" among
+the out-of-scope features (see `crates/marketplace-royalties/src/lib.rs`).
+Real marketplaces need token-level exceptions — a specific edition or 1/1
+piece carries a different rate than its collection default. This issue adds
+per-token overrides that take precedence over the collection configuration,
+with the same validation and rounding guarantees.
+
+### What "done" looks like
+
+- `set_token_royalty(collection, token_id, recipient, bps)` (name flexible)
+  registers an override for a single token within a collection, with the
+  same `bps <= 10_000` validation as the collection-level config, and a
+  `clear_token_royalty(collection, token_id)` that falls back to the
+  collection config.
+- `distribute` uses the token override when one exists, otherwise the
+  collection config, otherwise `NotFound` — precedence documented and
+  tested.
+- A `get_token_royalty` read-only view distinguishes "no override" from
+  "override set" (documented return convention).
+- Rounding and safety guarantees preserved and pinned by tests: floor
+  division, shares + net == amount, never-negative net, `bps == 10_000` and
+  `0` bps edges, amounts near `i128::MAX`.
+- Re-registering or updating a collection config does not corrupt or erase
+  token overrides (tested).
+- Unit tests cover: override precedence, fallback after clear, override on
+  an unregistered collection (allowed or `NotFound` — pick one, document it,
+  test it), update-in-place, and the `Disabled`-collection interaction
+  (document whether `Disabled` skips overrides; test the chosen behavior).
+- `cargo test -p soroban-forge-marketplace-royalties --all-targets --locked`
+  and `make lint` pass; WASM size budget respected.
+
+### Implementation guidelines
+
+- Read `crates/marketplace-royalties/src/lib.rs` first; the `DataKey::Royalty`
+  layout, `bps` validation, and the compute-only `distribute` are the
+  baseline.
+- Storage: add a `DataKey::TokenRoyalty(collection, token_id)` key rather
+  than nesting overrides inside the collection struct, so per-token entries
+  scale independently. Document the schema in the crate docs.
+- Choose and document a token-id representation (`u64`/`u256`/`Bytes`) that
+  matches how the repo's collection contracts mint ids — verify rather than
+  assume, and state the choice in the PR.
+- Coordination: sibling issues cover multi-recipient splits and tests for
+  this crate. Keep this change additive and orthogonal — it changes *which
+  rate applies*, not how many recipients exist.
+- Keep `set_royalty`/`distribute`/`get_royalty` behavior backward-compatible
+  for collections without overrides.
+- Reuse `crates/test-utils` and the house test style (`setup!` macro,
+  `try_<method>` client variants, `.unwrap_err().unwrap()`).
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- State the token-id representation choice and the override-precedence rules.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-marketplace-royalties --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(marketplace-royalties): per-token royalty overrides" \
+  "enhancement,complexity: high,Stellar Wave,external-contributors" \
+  "$BODY_DIR/i17.md"
+
+# --------------------------------------------------------------- Issue 18
+# High: token-balance custody model for the multisig wallet.
+cat > "$BODY_DIR/i18.md" <<'EOF'
+### Description
+
+The multi-sig wallet stores `Owners`, `Threshold`, and `Tx` records in
+instance storage, and `execute` flips the status without dispatching anything
+(real payload dispatch is covered by a separate issue). Before payloads can be
+executed against the chain, the wallet needs a **custody model**: which assets
+it holds, where they live in storage, and how balances survive Soroban's
+storage TTL system. Instance storage is the wrong home for anything the
+wallet custodies long-term — this issue designs and implements the balance
+layer.
+
+### What "done" looks like
+
+- A documented custody design covering: SEP-41 token balances held by the
+  wallet contract, per-token accounting keys in **persistent** storage (not
+  instance), and the TTL/bump strategy for each key class — with the
+  rationale written into the crate docs next to the existing storage-keys
+  comment.
+- `deposit(env, token, amount)` pulling tokens into the wallet (owner or
+  third-party deposits: pick one, document it) and a read-only
+  `balance(env, token)` view.
+- A `withdraw` flow gated by the existing multisig machinery: a withdrawal is
+  a `Pending` tx like any other, executed only past threshold, moving real
+  tokens to a destination recorded in the tx.
+- Failure ordering: transfer first, state second; a failed transfer leaves
+  balances and tx state untouched (tested).
+- Overflow-safe accounting (`checked_add`/`checked_sub` mapping to
+  `ForgeError::ArithmeticOverflow`), and a test that a withdrawal exceeding
+  the balance fails with the documented error and changes nothing.
+- Integration tests with a registered token: deposit → balance reflects it;
+  threshold-approved withdraw → destination balance increases, wallet balance
+  decreases, exactly once; a below-threshold withdraw cannot execute.
+- `cargo test -p soroban-forge-multi-sig-wallet --all-targets --locked` and
+  `make lint` pass; WASM size budget respected.
+
+### Implementation guidelines
+
+- Read `crates/multi-sig-wallet/src/lib.rs` (state machine and storage keys)
+  and `crates/escrow/src/lib.rs` `transfer_to_contract` /
+  `transfer_from_contract` / `bump_entry` for the house storage-bumping and
+  transfer pattern.
+- Study the escrow crate's persistent-vs-instance storage rationale (see its
+  `DataKey` docs) and mirror that reasoning for the wallet's balance keys.
+- Keep the existing entrypoints (`initialize`/`submit`/`confirm`/`execute`)
+  and their semantics; the new flows are additive. If `execute` gains any
+  balance-affecting behavior for withdrawal txs, document it in the PR.
+- The payload stays opaque `Bytes` for arbitrary txs; withdrawals may use a
+  typed record instead — pick one approach, document the tradeoff.
+- Reuse `crates/test-utils` and the house test style.
+
+### PR guidelines
+
+- Get assigned before starting.
+- PR description must include: `Closes #<this issue>`.
+- Summarize the custody design (key classes, TTL strategy) in the PR body.
+
+### 📋 Before you start
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test -p soroban-forge-multi-sig-wallet --all-targets --locked
+```
+EOF
+create_issue \
+  "feat(multi-sig-wallet): token custody with TTL-safe persistent balances" \
+  "enhancement,complexity: high,Stellar Wave,external-contributors" \
+  "$BODY_DIR/i18.md"
 
 if [[ "$APPLY" == false ]]; then
   echo
