@@ -5,6 +5,8 @@ Soroban smart contracts and developer tooling for the Stellar ecosystem.
 
 ## Contents
 
+- [ForgeBot](FORGEBOT.md) — pull-request automation: CI status reporting and
+  contributor feedback (not an official Drips or Stellar bot)
 - [Architecture](architecture/index.md)
 - [Best Practices](best-practices/index.md)
 - [Contracts](contracts/index.md)

@@ -167,6 +167,36 @@ make release
 - Integration tests use Stellar Asset Contract (SAC) fixtures
 - Escrow includes property testing for conservation invariant
 
+## Escrow Storage, TTL, and Token Trust
+
+### Persistent storage and TTL
+
+Escrow records are stored as per-id **persistent** entries. Each record is
+extended to a **30-day TTL** when it is written. State-changing escrow
+operations that update the record extend the entry's TTL using the same
+threshold-and-extend-to pattern. `touch_ttl` is permissionless and can extend
+an existing entry while it remains present in persistent storage.
+
+An active escrow with no state-changing activity can eventually reach expiry.
+Once the persistent escrow entry has expired, `touch_ttl` cannot recover it:
+the current implementation calls `load_escrow` before attempting the TTL
+extension, and a missing entry is reported as `NotFound`. The expired record
+is therefore inaccessible through the current contract interface. Expiration
+of the record does not remove the token balance; the funds remain in the token
+contract at the escrow contract's address. Long-lived active escrows therefore
+require a keeper to call `touch_ttl` before expiry. Anyone may perform this
+keeper action because `touch_ttl` is permissionless.
+
+### Token trust model
+
+`create_escrow` accepts a user-specified token address. The escrow does not
+validate whether that address is a deployed token contract and does not itself
+enforce SEP-41 compliance. The design assumes the supplied token follows the
+expected SEP-41 interface and behavior. Token transfer failures are handled
+through the existing `ForgeError::TokenTransferFailed` path. A malicious or
+non-compliant token is an external trust assumption, not a condition that the
+escrow currently validates against.
+
 ## CI Pipeline
 
 The CI workflow (`.github/workflows/ci.yml`) runs:
@@ -178,6 +208,12 @@ The CI workflow (`.github/workflows/ci.yml`) runs:
 5. **audit** - Dependency vulnerability scan
 6. **wasm-size** - Contract size budget enforcement
 7. **provenance** - Build reproducibility verification
+
+ForgeBot (`.github/workflows/forgebot.yml`, `scripts/forgebot/`) reports these
+results back to each pull request as a single sticky comment and publishes an
+informational `ForgeBot / ready-for-review` commit status. It does not add or
+replace any check, and it never approves or merges a pull request. See
+[ForgeBot](FORGEBOT.md) for details.
 
 ## Common Issues
 

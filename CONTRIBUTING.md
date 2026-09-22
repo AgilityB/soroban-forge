@@ -91,6 +91,20 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 5. Open a Pull Request with a clear title and description.
 6. Request review from at least one maintainer.
 
+## ForgeBot (pull-request automation)
+
+Once you open a pull request, **ForgeBot** — this repository's own automation —
+reports the results of the existing CI checks as a single comment that is
+updated in place on every push (it will not spam the thread). If a check fails,
+the comment names the failing check and points at `CONTRIBUTING.md` and
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) so you can reproduce it locally. When
+CI is green, ForgeBot marks the PR ready for maintainer review.
+
+ForgeBot **does not** review, approve, or merge your pull request; it is not an
+automation you can appeal to for a merge. A human maintainer/CODEOWNER approval
+is always required. ForgeBot is a Soroban Forge tool and is **not** an official
+Drips or Stellar bot. See [docs/FORGEBOT.md](docs/FORGEBOT.md).
+
 ## Community task workflow
 
 Contributor-facing tasks should use the **Maintainer Task** issue template and
