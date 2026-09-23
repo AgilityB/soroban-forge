@@ -45,7 +45,7 @@ honestly labeled **state machine** where they track but do not settle.
 | `initialize` | ✅ Implemented | Owner set + threshold validation |
 | `submit` | ✅ Implemented | Creates pending transaction record |
 | `confirm` | ✅ Implemented | One-confirmation-per-owner enforced |
-| `execute` | ⚠️ State only | Threshold check + status flip; **does not dispatch a token/call payload** |
+| `execute` | ✅ Implemented | Threshold check + cross-contract `try_invoke_contract` to recorded `target`; status flip **after** invocation; target revert surfaces as `ForgeError::ContractInvocationFailed` and leaves tx `Pending`; events emitted |
 | `get_threshold` / `get_tx` | ✅ Implemented | Read-only |
 
 ## DAO Governance (`crates/dao-governance`)
@@ -89,7 +89,7 @@ honestly labeled **state machine** where they track but do not settle.
 | `require_auth` on every state change | ✅ Workspace-wide | Escrow: proven against wrong signers via the negative-auth suite (`authz.rs`) + authorization-tree assertions; other five: call-graph level only (see [Known Limitations §4](KNOWN-LIMITATIONS.md)) |
 | Events | ⚠️ Escrow only | Full lifecycle events on escrow; none on the other five |
 | Persistent storage + TTL | ⚠️ Escrow only | Per-id persistent entries + `touch_ttl` keeper; others instance-only |
-| SEP-41 token settlement | ⚠️ Escrow + royalties | Real transfers with transfer-before-state ordering on escrow (`deposit`/`release`/`refund`/`resolve`) and marketplace `settle_sale`; the other four store amounts only |
+| SEP-41 token settlement | ⚠️ Escrow + royalties + multi-sig | Real transfers with transfer-before-state ordering on escrow (`deposit`/`release`/`refund`/`resolve`); marketplace `settle_sale` settles splits; multi-sig `execute` performs cross-contract `try_invoke_contract` on opaque-payload txs; the remaining three store amounts only |
 | Testnet deployment | ✅ Escrow deployed | Contract ID, WASM sha256, and receipt rounds in the README "Proof at a glance" table; the other five are not deployed |
 | Mainnet deployment | ⚠️ Partial | Smoke SAC live (`CBBCLWWU…DN4CW`, Horizon-confirmed); escrow WASM upload measured at **17.57 XLM rent** via simulation and deferred pending funding — see [Known Limitations §6](KNOWN-LIMITATIONS.md) |
 | TypeScript SDK | ✅ Generated | `@soroban-forge/escrow-client` generated from the deployed escrow ABI (no own test suite yet) |
