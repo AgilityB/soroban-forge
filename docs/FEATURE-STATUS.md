@@ -17,14 +17,15 @@ labeled **state machine** where they track but do not settle.
 | `deposit` | ✅ Implemented | **Real token transfer** buyer → contract, before any state write |
 | `release` | ✅ Implemented | Seller-authorized; **real token transfer** contract → seller |
 | `refund` | ✅ Implemented | Seller pre-deadline / buyer post-deadline; **real token transfer** |
+| `refund_expired` | ✅ Implemented | Permissionless strictly after timeout; `Funded` only, disputed escrows frozen |
 | `dispute` | ✅ Implemented | Claimant (buyer or seller) authorized, `Funded` only — see [design notes](KNOWN-LIMITATIONS.md#design-notes-not-limitations-but-worth-knowing) |
 | `resolve` | ✅ Implemented | Arbiter-only, final; pays either direction via **real token transfer** |
 | `cancel` | ✅ Implemented | Buyer, `Pending` only |
 | `get_status` / `get_escrow` | ✅ Implemented | Read-only |
 | `touch_ttl` | ✅ Implemented | Permissionless TTL keeper for the escrow's persistent entry |
-| Events | ✅ Implemented | `EscrowCreated`, `Deposited`, `Released`, `Refunded`, `Disputed`, `Resolved`, `Cancelled`; id as topic |
+| Events | ✅ Implemented | Includes distinct `RefundExpired` keeper event; escrow id as topic |
 | Storage | ✅ Persistent + TTL | Per-id persistent entries; instance storage only for the id counter |
-| Tests | ✅ 49 | Full lifecycle, dispute paths, failure ordering, conservation property, **randomized property suite** (proptest): conservation over random paths, tamper-resilient pool conservation, fund safety over arbitrary call sequences; **negative-auth suite** (`authz.rs`): per-entrypoint wrong-signer rejection, signature/args replay rejection, `env.auths()` authorization-tree assertions |
+| Tests | ✅ 55 | Full lifecycle, dispute paths, expiry-refund boundary and event coverage, failure ordering, conservation property, **randomized property suite** (proptest), and **negative-auth suite** (`authz.rs`) |
 
 ## Vesting (`crates/vesting`)
 

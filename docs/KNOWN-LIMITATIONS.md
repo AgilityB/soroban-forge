@@ -46,6 +46,11 @@ The other five contracts keep all state in `env.storage().instance()`.
 Long-lived records there still face the byte budget and TTL-expiry
 bricking problem. Migrate per contract with the escrow pattern.
 
+Escrow's permissionless `refund_expired` does not remove the persistent-entry
+expiry trap: it can settle an expired-in-time escrow only while its record is
+still present. `touch_ttl` can extend an existing entry, but cannot recover
+one after storage expiry (tracked separately by issue #93).
+
 ### 3. No events outside escrow
 
 Only escrow is observable on-chain. The rest need event modules before
