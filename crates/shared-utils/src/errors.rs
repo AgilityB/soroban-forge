@@ -38,4 +38,24 @@ pub enum ForgeError {
     /// code, so it is bucketed; the root cause remains visible in the
     /// transaction's diagnostic events.
     TokenTransferFailed = 11,
+    /// A cross-contract invocation failed (target reverted or host
+    /// abort). The target reverts are surfaced here so the caller can
+    /// distinguish them from token-transfer failures, and the invoking
+    /// transaction is left un-executed.
+    ContractInvocationFailed = 12,
+    /// The requested withdrawal would push a token's rolling-window total
+    /// past its configured withdrawal limit. Kept distinct from
+    /// [`ForgeError::InvalidInput`] so a caller can tell a policy rejection
+    /// (a valid withdrawal that is too large right now) from a malformed
+    /// argument.
+    WithdrawalLimitExceeded = 13,
+    /// A subscription is in the `PastDue` lapsed state and the requested
+    /// operation cannot be performed until a catch-up charge restores it to
+    /// `Active`. Kept distinct from [`ForgeError::DeadlineReached`] so a caller
+    /// can tell a lapsed billing state from an argument that was merely
+    /// too early.
+    SubscriptionPastDue = 14,
+    /// A proposer has reached the maximum allowed concurrent active proposals
+    /// or is within the proposer cooldown window.
+    ProposerCooldown = 15,
 }
