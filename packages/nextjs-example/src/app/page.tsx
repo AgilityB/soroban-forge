@@ -1,24 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  isConnected,
+  requestAccess,
+  signTransaction,
+} from "@stellar/freighter-api";
 import {
   Client,
   networks,
   type EscrowData,
 } from "@soroban-forge/escrow-client";
-
-declare global {
-  interface Window {
-    freighterApi?: {
-      isConnected(): Promise<boolean>;
-      getPublicKey(): Promise<string>;
-      signTransaction(
-        xdr: string,
-        opts?: { networkPassphrase?: string; address?: string }
-      ): Promise<{ signedTxXdr: string }>;
-    };
-  }
-}
 
 const RPC_URL = "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = networks.testnet.networkPassphrase;
@@ -42,6 +34,10 @@ function ts(): string {
 }
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  const [freighterAvailable, setFreighterAvailable] = useState<boolean | null>(
+    null
+  );
   const [account, setAccount] = useState<string | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,8 +78,24 @@ export default function Home() {
     []
   );
 
-  const freighterMissing =
-    typeof window !== "undefined" && !window.freighterApi;
+  useEffect(() => {
+    // This state gates browser-only wallet APIs and intentionally runs after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+
+    let active = true;
+    void isConnected().then(({ isConnected: available }) => {
+      if (active) setFreighterAvailable(available);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Browser extensions are unavailable during SSR. Keep the first render
+  // identical on the server and client, then inspect Freighter after mount.
+  const freighterMissing = mounted && freighterAvailable === false;
 
   const listMine = useCallback(
     async (c: Client, addr: string) => {
@@ -112,28 +124,44 @@ export default function Home() {
   const connect = useCallback(async () => {
     setBusy(true);
     try {
-      if (typeof window === "undefined" || !window.freighterApi) {
+      if (!mounted || freighterAvailable === false) {
         pushLog(
           "Freighter not detected. Install the Freighter wallet extension and reload.",
           "err"
         );
         return;
       }
-      if (!(await window.freighterApi.isConnected())) {
-        pushLog("Freighter is not connected yet. Allow access in the popup.", "err");
+
+      const access = await requestAccess();
+      if (access.error || !access.address) {
+        throw new Error(
+          access.error?.message ?? "Freighter access was not granted."
+        );
       }
-      const pubkey = await window.freighterApi.getPublicKey();
+      const pubkey = access.address;
       setAccount(pubkey);
+      // Keep the visible buyer value and the transaction payload in sync.
+      setBuyer((current) => current || pubkey);
       const c = new Client({
         rpcUrl: RPC_URL,
         networkPassphrase: NETWORK_PASSPHRASE,
         contractId: CONTRACT_ID,
         publicKey: pubkey,
-        signTransaction: (xdr: string, opts?: { networkPassphrase?: string; address?: string }) =>
-          window.freighterApi!.signTransaction(xdr, {
+        signTransaction: async (
+          xdr: string,
+          opts?: { networkPassphrase?: string; address?: string }
+        ) => {
+          const result = await signTransaction(xdr, {
             networkPassphrase: opts?.networkPassphrase ?? NETWORK_PASSPHRASE,
             address: opts?.address ?? pubkey,
-          }),
+          });
+          if (result.error || !result.signedTxXdr) {
+            throw new Error(
+              result.error?.message ?? "Freighter did not return a signed transaction."
+            );
+          }
+          return { signedTxXdr: result.signedTxXdr };
+        },
       });
       setClient(c);
       pushLog(
@@ -146,7 +174,7 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }, [pushLog, listMine]);
+  }, [freighterAvailable, listMine, mounted, pushLog]);
 
   const disconnect = useCallback(() => {
     setAccount(null);
@@ -193,12 +221,23 @@ export default function Home() {
         return;
       }
       const timeoutBig = BigInt(timeoutSecs || "0");
+      const buyerAddress = buyer.trim() || account?.trim() || "";
+      const sellerAddress = seller.trim();
+      const arbiterAddress = arbiter.trim();
+      const tokenAddress = token.trim();
+      if (!buyerAddress || !sellerAddress || !arbiterAddress || !tokenAddress) {
+        pushLog(
+          "Enter complete buyer, seller, arbiter, and token addresses before creating the escrow.",
+          "err"
+        );
+        return;
+      }
       const tx = await client.create_escrow(
         {
-          buyer,
-          seller,
-          arbiter,
-          token,
+          buyer: buyerAddress,
+          seller: sellerAddress,
+          arbiter: arbiterAddress,
+          token: tokenAddress,
           amount: amountBig,
           timeout: timeoutBig,
         },
@@ -223,6 +262,7 @@ export default function Home() {
       setCreating(false);
     }
   }, [
+    account,
     client,
     buyer,
     seller,
@@ -353,7 +393,7 @@ export default function Home() {
         ) : (
           <div>
             <button
-              {...(typeof window !== "undefined" && window.freighterApi
+              {...(mounted && freighterAvailable !== false
                 ? connectProps
                 : { disabled: true })}
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
