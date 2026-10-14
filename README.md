@@ -97,6 +97,10 @@ well-documented foundation, audit it for your use case, and ship.
 Implementation work is tracked as scoped, labeled
 [issues](https://github.com/Meet-hybrid/soroban-forge/issues).
 
+The Next.js example can be deployed to Vercel directly from this repository;
+see the [Vercel deployment guide](docs/VERCEL-DEPLOYMENT.md). The local SDK
+is built as part of the deployment, so npm publication is optional.
+
 ## Architecture
 
 ```mermaid
