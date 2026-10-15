@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  isConnected,
-  requestAccess,
-  signTransaction,
-} from "@stellar/freighter-api";
+import { Networks } from "@stellar/stellar-sdk";
+import { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit/sdk";
+import { defaultModules } from "@creit.tech/stellar-wallets-kit/modules/utils";
 import {
   Client,
   networks,
@@ -35,9 +33,6 @@ function ts(): string {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [freighterAvailable, setFreighterAvailable] = useState<boolean | null>(
-    null
-  );
   const [account, setAccount] = useState<string | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,23 +74,12 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // This state gates browser-only wallet APIs and intentionally runs after hydration.
+    // Wallet modules require browser APIs, so initialize them after hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
-
-    let active = true;
-    void isConnected().then(({ isConnected: available }) => {
-      if (active) setFreighterAvailable(available);
-    });
-
-    return () => {
-      active = false;
-    };
+    StellarWalletsKit.init({ modules: defaultModules() });
+    StellarWalletsKit.setNetwork(Networks.TESTNET);
   }, []);
-
-  // Browser extensions are unavailable during SSR. Keep the first render
-  // identical on the server and client, then inspect Freighter after mount.
-  const freighterMissing = mounted && freighterAvailable === false;
 
   const listMine = useCallback(
     async (c: Client, addr: string) => {
@@ -124,21 +108,11 @@ export default function Home() {
   const connect = useCallback(async () => {
     setBusy(true);
     try {
-      if (!mounted || freighterAvailable === false) {
-        pushLog(
-          "Freighter not detected. Install the Freighter wallet extension and reload.",
-          "err"
-        );
-        return;
+      if (!mounted) {
+        throw new Error("Wallet connectors are still loading; try again shortly.");
       }
 
-      const access = await requestAccess();
-      if (access.error || !access.address) {
-        throw new Error(
-          access.error?.message ?? "Freighter access was not granted."
-        );
-      }
-      const pubkey = access.address;
+      const { address: pubkey } = await StellarWalletsKit.authModal();
       setAccount(pubkey);
       // Keep the visible buyer value and the transaction payload in sync.
       setBuyer((current) => current || pubkey);
@@ -151,14 +125,12 @@ export default function Home() {
           xdr: string,
           opts?: { networkPassphrase?: string; address?: string }
         ) => {
-          const result = await signTransaction(xdr, {
+          const result = await StellarWalletsKit.signTransaction(xdr, {
             networkPassphrase: opts?.networkPassphrase ?? NETWORK_PASSPHRASE,
             address: opts?.address ?? pubkey,
           });
-          if (result.error || !result.signedTxXdr) {
-            throw new Error(
-              result.error?.message ?? "Freighter did not return a signed transaction."
-            );
+          if (!result.signedTxXdr) {
+            throw new Error("The selected wallet did not return a signed transaction.");
           }
           return { signedTxXdr: result.signedTxXdr };
         },
@@ -174,9 +146,10 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }, [freighterAvailable, listMine, mounted, pushLog]);
+  }, [listMine, mounted, pushLog]);
 
   const disconnect = useCallback(() => {
+    void StellarWalletsKit.disconnect();
     setAccount(null);
     setClient(null);
     setEscrow(null);
@@ -393,17 +366,14 @@ export default function Home() {
         ) : (
           <div>
             <button
-              {...(mounted && freighterAvailable !== false
-                ? connectProps
-                : { disabled: true })}
+              {...(mounted ? connectProps : { disabled: true })}
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {busy ? "Connecting…" : "Connect Freighter"}
+              {busy ? "Connecting…" : "Connect wallet"}
             </button>
-            {freighterMissing && (
+            {!mounted && (
               <p className="mt-2 text-sm text-amber-700">
-                Freighter not detected. Install the Freighter wallet extension
-                for Stellar, create/import an account, and reload this page.
+                Loading Stellar wallet connectors…
               </p>
             )}
           </div>
