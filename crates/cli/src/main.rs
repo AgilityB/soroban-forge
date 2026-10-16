@@ -11,7 +11,7 @@ mod cli;
 mod commands;
 
 use clap::{Parser, Subcommand};
-use cli::{BuildArgs, DeployArgs, LintArgs, TestArgs};
+use cli::{BuildArgs, DeployArgs, LintArgs, PlanArgs, SchemaArgs, TestArgs};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -31,6 +31,8 @@ pub enum Commands {
     Lint(LintArgs),
     Test(TestArgs),
     Deploy(DeployArgs),
+    Plan(PlanArgs),
+    Schema(SchemaArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -42,6 +44,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Lint(args) => commands::lint::run(args)?,
         Commands::Test(args) => commands::test::run(args)?,
         Commands::Deploy(args) => commands::deploy::run(args)?,
+        Commands::Plan(args) => commands::plan::run(args)?,
+        Commands::Schema(args) => commands::schema::run(args)?,
     }
 
     Ok(())
