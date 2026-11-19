@@ -1948,6 +1948,260 @@ mod tests {
         assert_eq!(err, ForgeError::NotFound);
     }
 
+    // -------------------------------------------------------------------
+    // Delegated-voting conservation and duplicate-vote coverage (issue #607)
+    // -------------------------------------------------------------------
+
+    /// Delegation is modeled as a token transfer before voting: when user1
+    /// transfers tokens to user2, user2's vote weight reflects the transferred
+    /// balance and user1's remaining balance still votes correctly. No voting
+    /// power is created or duplicated by the transfer.
+    #[test]
+    fn delegated_voting_power_is_counted_once() {
+        let (env, token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+        let stellar = StellarAssetClient::new(&env, &token);
+
+        // Give user1 extra tokens to delegate so the numbers are readable.
+        stellar.mint(&accounts.user1, &(FUNDS * 2));
+
+        let proposal_id = client.propose(
+            &accounts.user1,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        // Delegation: user1 -> user2 via token transfer.
+        stellar.transfer(&accounts.user1, &accounts.user2, &FUNDS);
+
+        let user2_weight = stellar.balance(&accounts.user2);
+        let user1_weight = stellar.balance(&accounts.user1);
+
+        // user2 votes with the delegated power.
+        client.vote(&proposal_id, &accounts.user2, &true);
+
+        // user1 votes with the remaining balance.
+        client.vote(&proposal_id, &accounts.user1, &false);
+
+        let proposal = client.get_proposal(&proposal_id);
+
+        assert_eq!(
+            proposal.for_votes, user2_weight,
+            "for_votes must equal the delegating voter's weight"
+        );
+        assert_eq!(
+            proposal.against_votes, user1_weight,
+            "against_votes must equal the remaining voter's weight"
+        );
+        assert_eq!(
+            proposal.for_votes + proposal.against_votes,
+            user2_weight + user1_weight,
+            "tally must equal the sum of cast vote weights"
+        );
+    }
+
+    /// After a voter has already voted, further token transfers to that voter
+    /// (repeated delegation) do not let them vote again. A fresh voter who
+    /// receives tokens can still vote with that weight.
+    #[test]
+    fn repeated_delegation_does_not_duplicate_power() {
+        let (env, token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+        let stellar = StellarAssetClient::new(&env, &token);
+
+        let proposal_id = client.propose(
+            &accounts.user1,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        // First delegation: user1 -> user2 (half of user1's balance).
+        stellar.transfer(&accounts.user1, &accounts.user2, &(FUNDS / 2));
+        client.vote(&proposal_id, &accounts.user2, &true);
+
+        // Repeated delegation: mint more to user1 and transfer again.
+        stellar.mint(&accounts.user1, &FUNDS);
+        stellar.transfer(&accounts.user1, &accounts.user2, &(FUNDS / 2));
+
+        let dup_err = client
+            .try_vote(&proposal_id, &accounts.user2, &true)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(dup_err, ForgeError::InvalidInput);
+
+        // A fresh voter (user3) can still vote with their own balance.
+        let user3_balance = stellar.balance(&accounts.user3);
+        client.vote(&proposal_id, &accounts.user3, &false);
+        assert_eq!(
+            stellar.balance(&accounts.user3),
+            user3_balance,
+            "voting must not spend tokens"
+        );
+    }
+
+    /// The aggregate tally must equal the sum of accepted vote records.
+    #[test]
+    fn aggregate_tally_equals_sum_of_vote_records() {
+        let (env, token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+        let stellar = StellarAssetClient::new(&env, &token);
+
+        // Distribute tokens unevenly across three voters.
+        stellar.mint(&accounts.user2, &FUNDS);
+        stellar.mint(&accounts.user3, &(FUNDS * 2));
+
+        let proposal_id = client.propose(
+            &accounts.user1,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        let w1 = stellar.balance(&accounts.user1);
+        let w2 = stellar.balance(&accounts.user2);
+        let w3 = stellar.balance(&accounts.user3);
+
+        client.vote(&proposal_id, &accounts.user1, &true);
+        client.vote(&proposal_id, &accounts.user2, &true);
+        client.vote(&proposal_id, &accounts.user3, &false);
+
+        let proposal = client.get_proposal(&proposal_id);
+
+        assert_eq!(
+            proposal.for_votes,
+            w1 + w2,
+            "for_votes must equal the sum of for weights"
+        );
+        assert_eq!(
+            proposal.against_votes, w3,
+            "against_votes must equal the sum of against weights"
+        );
+        assert_eq!(
+            proposal.for_votes + proposal.against_votes,
+            w1 + w2 + w3,
+            "tally must equal the sum of all vote weights"
+        );
+    }
+
+    /// A vote cast at the deadline boundary: one ledger tick before the
+    /// deadline succeeds, exactly at the deadline is rejected with
+    /// `DeadlineReached`.
+    #[test]
+    fn vote_at_deadline_boundary() {
+        let (env, _token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+
+        let proposal_id = client.propose(
+            &accounts.user2,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        let proposal = client.get_proposal(&proposal_id);
+        let deadline = proposal.voting_ends;
+
+        // One tick before the deadline: vote succeeds.
+        env.ledger().set_timestamp(deadline - 1);
+        client.vote(&proposal_id, &accounts.user2, &true);
+
+        // Exactly at the deadline: vote is rejected.
+        env.ledger().set_timestamp(deadline);
+        let err = client
+            .try_vote(&proposal_id, &accounts.user2, &false)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::DeadlineReached);
+    }
+
+    /// Token transfers that change a voter's balance after they have voted do
+    /// not retroactively change the already-recorded vote weight: the weight is
+    /// captured at vote time and stored in the proposal.
+    #[test]
+    fn delegation_changes_after_vote_do_not_affect_cast_vote() {
+        let (env, token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+        let stellar = StellarAssetClient::new(&env, &token);
+
+        let proposal_id = client.propose(
+            &accounts.user1,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        // Delegate before voting (half of user1's balance).
+        stellar.transfer(&accounts.user1, &accounts.user2, &(FUNDS / 2));
+        let weight_before = stellar.balance(&accounts.user2);
+
+        client.vote(&proposal_id, &accounts.user2, &true);
+
+        // Reverse the delegation after the vote.
+        stellar.transfer(&accounts.user2, &accounts.user1, &(FUNDS / 2));
+        // user2 retains their original FUNDS from fresh_bond!() plus the
+        // reversal returns the delegated half, so user2 is back to their
+        // starting balance.
+        assert_eq!(
+            stellar.balance(&accounts.user2),
+            FUNDS,
+            "user2 should be back to their starting balance after reversal"
+        );
+
+        // The recorded vote weight must still reflect the weight at vote time.
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(
+            proposal.for_votes, weight_before,
+            "vote weight must be captured at vote time"
+        );
+
+        // user2 must not be able to vote again.
+        let err = client
+            .try_vote(&proposal_id, &accounts.user2, &false)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+    }
+
+    /// A failed vote attempt must leave the proposal's tally and state
+    /// unchanged.
+    #[test]
+    fn failed_vote_does_not_change_proposal_state() {
+        let (env, token, _tc, _contract_id, client, accounts, target_id) = fresh_bond!();
+        let stellar = StellarAssetClient::new(&env, &token);
+
+        let proposal_id = client.propose(
+            &accounts.user1,
+            &target_id,
+            &payload(&env),
+            &DURATION,
+            &soroban_sdk::Vec::new(&env),
+            &None,
+        );
+
+        // Drain user2's balance so the vote is rejected.
+        stellar.transfer(&accounts.user2, &accounts.user1, &FUNDS);
+
+        let before = client.get_proposal(&proposal_id);
+
+        let err = client
+            .try_vote(&proposal_id, &accounts.user2, &true)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, ForgeError::InvalidInput);
+
+        let after = client.get_proposal(&proposal_id);
+        assert_eq!(after.for_votes, before.for_votes);
+        assert_eq!(after.against_votes, before.against_votes);
+        assert_eq!(after.state, before.state);
+    }
+
     #[test]
     fn execute_before_deadline_is_invalid() {
         let (_env, client, _accounts, proposal_id, _target_id) = setup!();
