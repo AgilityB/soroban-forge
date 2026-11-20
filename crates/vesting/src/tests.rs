@@ -3,7 +3,7 @@ use soroban_forge_test_utils::TestAccounts;
 use soroban_sdk::events::Event as _;
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::{Client as TokenClient, StellarAssetClient};
-use soroban_sdk::Env;
+use soroban_sdk::{Env, Vec as SorobanVec};
 
 const START: u64 = 1_000_000;
 const CLIFF: u64 = 1_000;
