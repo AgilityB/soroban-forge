@@ -1391,8 +1391,6 @@ fn refund_revoked_requires_a_revoked_linear_schedule() {
     assert_eq!(tc.balance(&accounts.deployer), 0);
     assert_eq!(tc.balance(&contract_id), 0);
 }
-
-// -------------------------------------------------------------------
 // Batch schedule creation (issue #641)
 // -------------------------------------------------------------------
 
@@ -1400,7 +1398,6 @@ fn refund_revoked_requires_a_revoked_linear_schedule() {
 /// the aggregate token amount is transferred from the funder in one atomic
 /// step.
 #[test]
-fn create_schedules_batch_succeeds_and_uses_sequential_ids() {
 fn create_schedules_batch_succeeds_and_uses_sequential_ids() {
     let (env, token, _tc, _cid, client, accounts) = setup!();
     // Fund the deployer with enough tokens for the batch.
@@ -1448,11 +1445,8 @@ fn create_schedules_batch_transfers_aggregate_amount() {
         cliff: CLIFF,
         duration: DURATION,
     };
-
-/// The aggregate token amount across the batch is transferred from the funder
-/// to the contract custody in one atomic transfer.
-#[test]
-fn create_schedules_batch_transfers_aggregate_amount() {
+    let a2 = CreateScheduleArgs {
+        beneficiary: accounts.user2.clone(),
         token: token.clone(),
         total_amount: TOTAL * 2,
         cliff: CLIFF,
@@ -1487,10 +1481,8 @@ fn create_schedules_batch_rejects_mixed_tokens() {
     };
     let a2 = CreateScheduleArgs {
         beneficiary: accounts.user2.clone(),
-
-/// A batch that mixes tokens is rejected as invalid and nothing is written.
-#[test]
-fn create_schedules_batch_rejects_mixed_tokens() {
+        token: token_b,
+        total_amount: TOTAL,
         cliff: CLIFF,
         duration: DURATION,
     };
@@ -1524,10 +1516,8 @@ fn create_schedules_batch_rejects_empty() {
         .unwrap_err()
         .unwrap();
     assert_eq!(err, ForgeError::InvalidInput);
+}
 
-/// An empty batch is rejected.
-#[test]
-fn create_schedules_batch_rejects_empty() {
 /// A batch longer than 10 schedules is rejected.
 #[test]
 fn create_schedules_batch_rejects_too_many() {
@@ -1537,10 +1527,8 @@ fn create_schedules_batch_rejects_too_many() {
     for _ in 0..11 {
         schedules.push_back(CreateScheduleArgs {
             beneficiary: accounts.user1.clone(),
-
-/// A batch longer than 10 schedules is rejected.
-#[test]
-fn create_schedules_batch_rejects_too_many() {
+            token: token.clone(),
+            total_amount: TOTAL,
             cliff: CLIFF,
             duration: DURATION,
         });
@@ -1552,9 +1540,6 @@ fn create_schedules_batch_rejects_too_many() {
         .unwrap();
     assert_eq!(err, ForgeError::InvalidInput);
 }
-
-/// A batch with an invalid schedule (zero amount) is rejected entirely and
-/// no schedule records are written.
 
 /// A batch with an invalid schedule (zero amount) is rejected entirely and
 /// no schedule records are written.
@@ -1593,8 +1578,12 @@ fn create_schedules_batch_rolls_back_on_invalid_entry() {
             .instance()
             .get(&DataKey::Count)
             .unwrap_or(0)),
+        0
+    );
+    assert_eq!(_tc.balance(&cid), TOTAL);
+}
 
-/// Batch creation emits one [`ScheduleCreated`] event per schedule.
+/// Each schedule in a successful batch emits a ScheduleCreated event.
 #[test]
 fn create_schedules_batch_emits_creation_events() {
     let (env, token, _tc, cid, client, accounts) = setup!();
@@ -1633,4 +1622,11 @@ fn create_schedules_batch_emits_creation_events() {
         events::ScheduleCreated {
             schedule_id: ids.get(1).unwrap(),
             beneficiary: accounts.user2.clone(),
-
+            total_amount: TOTAL * 2,
+            cliff: CLIFF,
+            duration: DURATION,
+        }
+        .to_xdr(&env, &cid),
+    ];
+    assert_eq!(emitted.events(), expected.as_slice());
+}
